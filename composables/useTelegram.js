@@ -1,12 +1,8 @@
 // composables/useTelegram.js
-import { TelegramClient } from "telegram";
-import { StringSession } from "telegram/sessions";
 
-// ─── Safety: delay between batch API calls ────────────────────────────────────
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const SAFE_DELAY = 500; // ms between channel requests — avoids flood bans
+const SAFE_DELAY = 500;
 
-// ─── Singleton client (shared across all pages via useState) ──────────────────
 export const useTgClient = () => useState("tg_client", () => null);
 export const useTgConnected = () => useState("tg_connected", () => false);
 
@@ -14,8 +10,9 @@ export const useTelegram = () => {
   const client = useTgClient();
   const isConnected = useTgConnected();
 
-  // ─── Connect ───────────────────────────────────────────────────────────────
   const connect = async ({ apiId, apiHash, session = "" }) => {
+    const { TelegramClient } = await import("telegram");
+    const { StringSession } = await import("telegram/sessions");
     const stringSession = new StringSession(session);
     client.value = new TelegramClient(stringSession, parseInt(apiId), apiHash, {
       connectionRetries: 5,
@@ -28,26 +25,30 @@ export const useTelegram = () => {
   const getSession = () => client.value?.session?.save() ?? "";
 
   const disconnect = () => {
-    try { client.value?.disconnect?.(); } catch {}
+    try {
+      client.value?.disconnect?.();
+    } catch {}
     client.value = null;
     isConnected.value = false;
   };
 
-  // ─── Dialogs ───────────────────────────────────────────────────────────────
   const getDialogs = async ({ limit = 300 } = {}) => {
     if (!client.value) return [];
     const dialogs = await client.value.getDialogs({ limit });
     return dialogs.filter((d) => d.isChannel || d.isGroup);
   };
 
-  // ─── Messages ──────────────────────────────────────────────────────────────
   const getMessages = async (entity, { limit = 100 } = {}) => {
     if (!client.value) return [];
     return await client.value.getMessages(entity, { limit });
   };
 
-  // ─── Safe bulk scan (rate-limited, with progress callback) ────────────────
-  const scanAllChannels = async ({ limit = 100, cutoffDate, onEachMessage, onProgress } = {}) => {
+  const scanAllChannels = async ({
+    limit = 100,
+    cutoffDate,
+    onEachMessage,
+    onProgress,
+  } = {}) => {
     if (!client.value) return;
     const dialogs = await getDialogs({ limit: 300 });
     for (let i = 0; i < dialogs.length; i++) {
@@ -59,17 +60,19 @@ export const useTelegram = () => {
           if (cutoffDate && new Date(msg.date * 1000) < cutoffDate) continue;
           onEachMessage?.(msg, ch);
         }
-      } catch { /* silently skip unreadable channels */ }
+      } catch {}
       onProgress?.(i + 1, dialogs.length);
       await sleep(SAFE_DELAY);
     }
   };
 
-  // ─── Delete YOUR OWN messages only ────────────────────────────────────────
   const deleteMyMessages = async (entity, { onProgress } = {}) => {
     if (!client.value) return { deleted: 0 };
     const me = await client.value.getMe();
-    const msgs = await client.value.getMessages(entity, { limit: 100, fromUser: me });
+    const msgs = await client.value.getMessages(entity, {
+      limit: 100,
+      fromUser: me,
+    });
     const ids = msgs.map((m) => m.id);
     if (!ids.length) return { deleted: 0 };
     await client.value.deleteMessages(entity, ids, { revoke: true });
@@ -77,11 +80,12 @@ export const useTelegram = () => {
     return { deleted: ids.length };
   };
 
-  // ─── Get group/channel members ────────────────────────────────────────────
   const getMembers = async (entity, { limit = 200 } = {}) => {
     if (!client.value) return [];
     try {
-      const participants = await client.value.getParticipants(entity, { limit });
+      const participants = await client.value.getParticipants(entity, {
+        limit,
+      });
       return participants.map((p) => ({
         id: p.id?.toString(),
         firstName: p.firstName ?? "",
@@ -90,20 +94,46 @@ export const useTelegram = () => {
         phone: p.phone ?? "",
         isBot: p.bot ?? false,
       }));
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   };
 
-  // ─── Channel analytics ────────────────────────────────────────────────────
   const analyzeChannel = async (entity, { limit = 200 } = {}) => {
     if (!client.value) return null;
     const msgs = await client.value.getMessages(entity, { limit });
     const byHour = Array(24).fill(0);
     const wordCount = {};
     const stopwords = new Set([
-      "في","من","إلى","على","مع","هذا","هذه","التي","الذي","وقد","كان","عن",
-      "the","a","an","is","in","of","to","and","for","on","at","by","or","it","that","this",
+      "في",
+      "من",
+      "إلى",
+      "على",
+      "مع",
+      "هذا",
+      "هذه",
+      "التي",
+      "الذي",
+      "وقد",
+      "كان",
+      "عن",
+      "the",
+      "a",
+      "an",
+      "is",
+      "in",
+      "of",
+      "to",
+      "and",
+      "for",
+      "on",
+      "at",
+      "by",
+      "or",
+      "it",
+      "that",
+      "this",
     ]);
-
     for (const msg of msgs) {
       if (!msg.message) continue;
       const d = new Date(msg.date * 1000);
@@ -113,14 +143,14 @@ export const useTelegram = () => {
         .replace(/[^\u0600-\u06FFa-z\s]/g, " ")
         .split(/\s+/)
         .filter((w) => w.length > 3 && !stopwords.has(w))
-        .forEach((w) => { wordCount[w] = (wordCount[w] ?? 0) + 1; });
+        .forEach((w) => {
+          wordCount[w] = (wordCount[w] ?? 0) + 1;
+        });
     }
-
     const topWords = Object.entries(wordCount)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 15)
       .map(([word, count]) => ({ word, count }));
-
     return {
       totalMessages: msgs.length,
       byHour,
@@ -129,7 +159,6 @@ export const useTelegram = () => {
     };
   };
 
-  // ─── Get media list from a channel ───────────────────────────────────────
   const getMediaList = async (entity, { limit = 50 } = {}) => {
     if (!client.value) return [];
     const msgs = await client.value.getMessages(entity, { limit });
@@ -139,7 +168,9 @@ export const useTelegram = () => {
         id: m.id,
         date: new Date(m.date * 1000),
         type: m.photo ? "photo" : m.document ? "document" : "other",
-        fileName: m.document?.attributes?.find((a) => a.fileName)?.fileName ?? `file_${m.id}`,
+        fileName:
+          m.document?.attributes?.find((a) => a.fileName)?.fileName ??
+          `file_${m.id}`,
         size: m.document?.size ?? null,
         msg: m,
       }));
@@ -151,10 +182,18 @@ export const useTelegram = () => {
   };
 
   return {
-    client, isConnected,
-    connect, getSession, disconnect,
-    getDialogs, getMessages, scanAllChannels,
-    deleteMyMessages, getMembers, analyzeChannel,
-    getMediaList, downloadMedia,
+    client,
+    isConnected,
+    connect,
+    getSession,
+    disconnect,
+    getDialogs,
+    getMessages,
+    scanAllChannels,
+    deleteMyMessages,
+    getMembers,
+    analyzeChannel,
+    getMediaList,
+    downloadMedia,
   };
 };

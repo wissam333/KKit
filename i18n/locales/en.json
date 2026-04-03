@@ -405,5 +405,11 @@
   "waitingForPeer": "Waiting for peer to connect…",
   "peerConnected": "Peer connected — ready to call",
   "readyToCall": "Ready to call",
-  "remoteDevice": "Remote Device"
+  "remoteDevice": "Remote Device",
+  "welcomeTo": "Welcome to",
+  "entryDesc": "A collection of practical tools and developer resources",
+  "gramkitDesc": "Grammar & language utilities for developers and writers",
+  "toolboxDesc": "Collection of handy utilities — screen mirror, notepad, clipboard sync and more",
+  "language": "Language",
+  "tools": "Tools"
 }
