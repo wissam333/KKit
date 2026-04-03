@@ -393,7 +393,6 @@
   "howStep3": "Both connect to the local Nuxt WebSocket signaling server",
   "howStep4": "WebRTC peer-to-peer video — never leaves your network",
   "requiresHttps": "Requires HTTPS (run nuxt dev --https). Video is peer-to-peer.",
-  "": "",
   "videoCall": "Video Call",
   "startVideoCall": "Start Video Call",
   "audioOnly": "Audio Only",

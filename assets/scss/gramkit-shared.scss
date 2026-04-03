@@ -1,0 +1,391 @@
+// assets/scss/_gramkit-shared.scss
+// ─────────────────────────────────────────────────────────────
+// Shared styles used across ALL GramKit tool pages.
+// Import this in each page's <style> block:
+//   @use "~/assets/scss/gramkit-shared" as *;
+// ─────────────────────────────────────────────────────────────
+
+/* ── Page shell ─────────────────────────────────────────────── */
+.tool-page {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 24px 20px 80px;
+    font-family: "Tajawal", sans-serif;
+
+    @media (max-width: 768px) {
+        padding: 20px 14px 60px;
+    }
+    @media (max-width: 480px) {
+        padding: 16px 12px 50px;
+    }
+}
+
+/* ── Guard (not connected) ───────────────────────────────────── */
+.guard {
+    display: flex;
+    justify-content: center;
+    padding-top: 60px;
+}
+
+/* ── Tool header ─────────────────────────────────────────────── */
+.tool-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 22px;
+    flex-wrap: wrap;
+
+    @media (max-width: 480px) {
+        gap: 10px;
+        margin-bottom: 16px;
+    }
+}
+
+.back-btn {
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    background: var(--bg-surface);
+    border: 1.5px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    text-decoration: none;
+    transition:
+        color 0.18s,
+        border-color 0.18s;
+
+    &:hover {
+        color: var(--text-primary);
+        border-color: var(--text-muted);
+    }
+}
+
+.tool-header-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    @media (max-width: 480px) {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+    }
+
+    // Color variants
+    &.blue {
+        background: rgba(42, 171, 238, 0.1);
+        color: #2aabee;
+        border: 1.5px solid rgba(42, 171, 238, 0.2);
+    }
+    &.purple {
+        background: rgba(124, 58, 237, 0.1);
+        color: #7c3aed;
+        border: 1.5px solid rgba(124, 58, 237, 0.2);
+    }
+    &.orange {
+        background: rgba(249, 115, 22, 0.1);
+        color: #f97316;
+        border: 1.5px solid rgba(249, 115, 22, 0.2);
+    }
+    &.red {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+        border: 1.5px solid rgba(239, 68, 68, 0.2);
+    }
+    &.green {
+        background: rgba(34, 197, 94, 0.1);
+        color: #22c55e;
+        border: 1.5px solid rgba(34, 197, 94, 0.2);
+    }
+    &.teal {
+        background: rgba(20, 184, 166, 0.1);
+        color: #14b8a6;
+        border: 1.5px solid rgba(20, 184, 166, 0.2);
+    }
+    &.indigo {
+        background: rgba(99, 102, 241, 0.1);
+        color: #6366f1;
+        border: 1.5px solid rgba(99, 102, 241, 0.2);
+    }
+    &.amber {
+        background: rgba(245, 158, 11, 0.1);
+        color: #f59e0b;
+        border: 1.5px solid rgba(245, 158, 11, 0.2);
+    }
+    &.archiver {
+        background: rgba(99, 102, 241, 0.1);
+        color: #6366f1;
+        border: 1.5px solid rgba(99, 102, 241, 0.2);
+    }
+    &.saves {
+        background: rgba(245, 158, 11, 0.1);
+        color: #f59e0b;
+        border: 1.5px solid rgba(245, 158, 11, 0.2);
+    }
+    &.wrapped {
+        background: linear-gradient(135deg, rgba(124, 58, 237, 0.12), rgba(42, 171, 238, 0.12));
+        color: #7c3aed;
+        border: 1.5px solid rgba(124, 58, 237, 0.2);
+    }
+}
+
+.tool-title {
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin: 0 0 2px;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    @media (max-width: 480px) {
+        font-size: 0.95rem;
+    }
+}
+
+.tool-sub {
+    font-size: 0.76rem;
+    color: var(--text-sub);
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    @media (max-width: 480px) {
+        font-size: 0.71rem;
+    }
+}
+
+.tool-header-text {
+    min-width: 0;
+}
+
+.tool-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-inline-start: auto;
+    flex-wrap: wrap;
+}
+
+/* ── ms-auto helper ──────────────────────────────────────────── */
+.ms-auto {
+    margin-inline-start: auto;
+}
+
+/* ── Picker row ──────────────────────────────────────────────── */
+.picker-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+
+    @media (max-width: 480px) {
+        gap: 8px;
+        margin-bottom: 14px;
+    }
+}
+
+.channel-select {
+    flex: 1;
+    min-width: 180px;
+}
+
+/* ── Segmented control ───────────────────────────────────────── */
+.seg-control {
+    display: flex;
+    background: var(--bg-elevated);
+    border: 1.5px solid var(--border-color);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.seg-btn {
+    padding: 7px 11px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    font-family: "Tajawal", sans-serif;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: all 0.18s;
+    white-space: nowrap;
+
+    @media (max-width: 360px) {
+        padding: 6px 8px;
+        font-size: 0.72rem;
+    }
+}
+
+/* ── Keyword tag helpers ──────────────────────────────────────── */
+.kw-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.kw-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 0.77rem;
+    color: var(--text-primary);
+}
+
+.kw-x {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    &:hover {
+        color: #d32f2f;
+    }
+}
+
+.kw-add-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+
+/* ── Info / safety banners ───────────────────────────────────── */
+.info-banner,
+.safety-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    border-radius: 12px;
+    padding: 11px 15px;
+    font-size: 0.81rem;
+    margin-bottom: 18px;
+    line-height: 1.5;
+
+    @media (max-width: 480px) {
+        padding: 9px 12px;
+        font-size: 0.77rem;
+    }
+}
+
+.safety-banner {
+    background: rgba(34, 197, 94, 0.06);
+    border: 1px solid rgba(34, 197, 94, 0.25);
+    color: #16a34a;
+}
+
+/* ── Chart card ──────────────────────────────────────────────── */
+.chart-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 18px 16px;
+    margin-bottom: 14px;
+
+    @media (max-width: 480px) {
+        padding: 14px 12px;
+    }
+}
+
+.chart-title {
+    font-size: 0.87rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 14px;
+}
+
+/* ── Section card (Wrapped) ──────────────────────────────────── */
+.section-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 18px 16px;
+    margin-bottom: 14px;
+}
+
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.87rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 14px;
+}
+
+/* ── Scan / loading progress ─────────────────────────────────── */
+.scan-progress,
+.loading-wrap {
+    padding: 16px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.scan-msg,
+.scan-label,
+.load-msg {
+    font-size: 0.77rem;
+    color: var(--text-muted);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* ── Results header ──────────────────────────────────────────── */
+.results-header,
+.preview-header,
+.alerts-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.results-count,
+.preview-count {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-sub);
+}
+
+.results-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* ── Utility ──────────────────────────────────────────────────── */
+.w-full {
+    width: 100%;
+}
+.mb-24 {
+    margin-bottom: 24px;
+}
+.d-flex {
+    display: flex;
+}
+.gap-1 {
+    gap: 6px;
+}
+.gap-2 {
+    gap: 10px;
+}

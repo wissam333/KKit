@@ -1,6 +1,5 @@
 <template>
   <div class="tool-page" :dir="locale === 'ar' ? 'rtl' : 'ltr'">
-    <!-- Not connected guard -->
     <div v-if="!isConnected" class="guard">
       <SharedUiFeedbackEmptyState
         icon="mdi:link-variant-off"
@@ -13,15 +12,14 @@
     </div>
 
     <template v-else>
-      <!-- Header -->
       <div class="tool-header">
-        <NuxtLink to="/gramkit" class="back-btn">
-          <Icon name="mdi:arrow-left" size="16" />
-        </NuxtLink>
+        <NuxtLink to="/gramkit" class="back-btn"
+          ><Icon name="mdi:arrow-left" size="15"
+        /></NuxtLink>
         <div class="tool-header-icon blue">
-          <Icon name="mdi:briefcase-search-outline" size="22" />
+          <Icon name="mdi:briefcase-search-outline" size="20" />
         </div>
-        <div>
+        <div class="tool-header-text">
           <h1 class="tool-title">{{ $t("gramkit.tools.jobs.name") }}</h1>
           <p class="tool-sub">{{ $t("gramkit.tools.jobs.desc") }}</p>
         </div>
@@ -30,7 +28,7 @@
             <button
               v-for="opt in rangeOptions"
               :key="opt.value"
-              class="range-btn"
+              class="seg-btn"
               :class="{ active: searchDays === opt.value }"
               @click="searchDays = opt.value"
             >
@@ -43,12 +41,12 @@
             variant="outline"
             size="sm"
             @click="scanJobs"
-            >{{ $t("gramkit.jobs.scan") }}</SharedUiButtonBase
           >
+            {{ $t("gramkit.jobs.scan") }}
+          </SharedUiButtonBase>
         </div>
       </div>
 
-      <!-- Progress bar while scanning -->
       <div v-if="scanning" class="scan-progress">
         <SharedUiIndicatorsProgress
           type="linear"
@@ -64,15 +62,14 @@
         >
       </div>
 
-      <!-- Stats -->
       <SharedUiCardsStats
         v-if="!scanning && jobs.length"
         :stats="statsCards"
         :columns="3"
-        :icon-size="24"
+        :icon-size="22"
       />
 
-      <!-- Keyword filter chips -->
+      <!-- Keyword filter -->
       <div v-if="jobs.length" class="kw-filter-bar">
         <span class="kw-label">{{ $t("gramkit.jobs.filter") }}:</span>
         <div class="kw-chips">
@@ -110,13 +107,11 @@
             size="sm"
             variant="outline"
             @click="addKeyword"
+            >{{ $t("gramkit.jobs.addKeyword") }}</SharedUiButtonBase
           >
-            {{ $t("gramkit.jobs.addKeyword") }}
-          </SharedUiButtonBase>
         </div>
       </div>
 
-      <!-- Empty state -->
       <SharedUiFeedbackEmptyState
         v-if="!scanning && !filteredJobs.length"
         icon="mdi:briefcase-search-outline"
@@ -137,38 +132,42 @@
           :style="{ animationDelay: `${i * 30}ms` }"
         >
           <div class="jc-head">
-            <span class="ch-badge">
-              <Icon name="mdi:telegram" size="12" />
-              {{ job.channel }}
-            </span>
-            <span class="jc-time">
-              <Icon name="mdi:clock-outline" size="12" />
-              {{ job.time }}
-            </span>
+            <span class="ch-badge"
+              ><Icon name="mdi:telegram" size="11" />{{ job.channel }}</span
+            >
+            <span class="jc-time"
+              ><Icon name="mdi:clock-outline" size="11" />{{ job.time }}</span
+            >
           </div>
-          <p class="jc-text">{{ truncate(job.text, 300) }}</p>
+          <p class="jc-text">{{ truncate(job.text, 280) }}</p>
           <div class="jc-kws">
             <span v-for="kw in job.matchedKeywords" :key="kw" class="mk">{{
               kw
             }}</span>
           </div>
           <div class="jc-foot">
-            <a v-if="job.link" :href="job.link" target="_blank" class="jc-open">
-              <Icon name="mdi:open-in-new" size="13" />
-              {{ $t("gramkit.jobs.open") }}
-            </a>
-            <button class="jc-copy" @click="copyText(job.text)">
-              <Icon name="mdi:content-copy" size="13" />
-              {{ $t("gramkit.jobs.copy") }}
+            <a v-if="job.link" :href="job.link" target="_blank" class="jc-open"
+              ><Icon name="mdi:open-in-new" size="12" />{{
+                $t("gramkit.jobs.open")
+              }}</a
+            >
+            <button class="jc-action-btn" @click="copyText(job.text)">
+              <Icon name="mdi:content-copy" size="12" />{{
+                $t("gramkit.jobs.copy")
+              }}
             </button>
-            <button class="jc-save" @click="saveJob(job)">
+            <button
+              class="jc-action-btn"
+              :class="{ saved: savedIds.includes(job.id) }"
+              @click="saveJob(job)"
+            >
               <Icon
                 :name="
                   savedIds.includes(job.id)
                     ? 'mdi:bookmark'
                     : 'mdi:bookmark-outline'
                 "
-                size="13"
+                size="12"
               />
               {{
                 savedIds.includes(job.id)
@@ -180,7 +179,7 @@
         </div>
       </div>
 
-      <!-- Skeleton while scanning -->
+      <!-- Skeleton -->
       <div v-if="scanning" class="jobs-grid">
         <div v-for="n in 6" :key="n" class="skeleton-card">
           <div class="sk sk-s" />
@@ -199,7 +198,6 @@ const { locale, t } = useI18n();
 const { $toast } = useNuxtApp();
 const { isConnected, scanAllChannels } = useTelegram();
 
-// ─── Range options ────────────────────────────────────────────────────────────
 const searchDays = ref(0);
 const rangeOptions = computed(() => [
   { value: 0, label: t("gramkit.range.today") },
@@ -208,7 +206,6 @@ const rangeOptions = computed(() => [
   { value: 30, label: t("gramkit.range.30days") },
 ]);
 
-// ─── Keywords ─────────────────────────────────────────────────────────────────
 const keywords = ref(["مطلوب", "وظيفة", "تعيين", "vacancy", "hiring", "job"]);
 const activeKeywords = ref([...keywords.value]);
 const newKeyword = ref("");
@@ -231,7 +228,6 @@ const toggleKw = (kw) => {
     : activeKeywords.value.push(kw);
 };
 
-// ─── Scanning state ───────────────────────────────────────────────────────────
 const scanning = ref(false);
 const scanProgress = ref(0);
 const scanDone = ref(0);
@@ -239,17 +235,16 @@ const scanTotal = ref(0);
 const jobs = ref([]);
 const savedIds = ref(JSON.parse(localStorage.getItem("gk_saved_ids") ?? "[]"));
 
-const filteredJobs = computed(() => {
-  if (!activeKeywords.value.length) return jobs.value;
-  return jobs.value.filter((j) =>
-    j.matchedKeywords.some((k) => activeKeywords.value.includes(k)),
-  );
-});
-
+const filteredJobs = computed(() =>
+  !activeKeywords.value.length
+    ? jobs.value
+    : jobs.value.filter((j) =>
+        j.matchedKeywords.some((k) => activeKeywords.value.includes(k)),
+      ),
+);
 const channelCount = computed(
   () => new Set(jobs.value.map((j) => j.channel)).size,
 );
-
 const statsCards = computed(() => [
   {
     key: "total",
@@ -274,20 +269,17 @@ const statsCards = computed(() => [
   },
 ]);
 
-// ─── Scan ─────────────────────────────────────────────────────────────────────
 const scanJobs = async () => {
   scanning.value = true;
   scanProgress.value = 0;
   scanDone.value = 0;
   jobs.value = [];
-
   const cutoff = new Date();
   if (searchDays.value === 0) cutoff.setHours(0, 0, 0, 0);
   else {
     cutoff.setDate(cutoff.getDate() - searchDays.value);
     cutoff.setHours(0, 0, 0, 0);
   }
-
   try {
     await scanAllChannels({
       limit: 100,
@@ -297,7 +289,7 @@ const scanJobs = async () => {
         const matched = keywords.value.filter((kw) =>
           lower.includes(kw.toLowerCase()),
         );
-        if (matched.length) {
+        if (matched.length)
           jobs.value.push({
             id: `${ch.id}_${msg.id}`,
             channel: ch.title,
@@ -316,7 +308,6 @@ const scanJobs = async () => {
               : null,
             matchedKeywords: matched,
           });
-        }
       },
       onProgress: (done, total) => {
         scanDone.value = done;
@@ -333,56 +324,54 @@ const scanJobs = async () => {
   }
 };
 
-// ─── Actions ──────────────────────────────────────────────────────────────────
 const copyText = async (text) => {
   await navigator.clipboard.writeText(text);
   $toast.success(t("gramkit.toast.copied"));
 };
-
 const saveJob = (job) => {
-  if (savedIds.value.includes(job.id)) {
-    savedIds.value = savedIds.value.filter((id) => id !== job.id);
-  } else {
-    savedIds.value.push(job.id);
-  }
+  savedIds.value.includes(job.id)
+    ? (savedIds.value = savedIds.value.filter((id) => id !== job.id))
+    : savedIds.value.push(job.id);
   localStorage.setItem("gk_saved_ids", JSON.stringify(savedIds.value));
 };
-
 const truncate = (text, max) =>
   text?.length > max ? text.slice(0, max) + "…" : text;
 
-// Auto-scan on mount
 onMounted(() => {
   if (isConnected.value) scanJobs();
 });
-
 </script>
 
 <style scoped lang="scss">
+/* ─── Shared base ──────── import from partial in real project ── */
 .tool-page {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 20px 16px 80px;
+  padding: 24px 20px 80px;
   font-family: "Tajawal", sans-serif;
+  @media (max-width: 768px) {
+    padding: 20px 14px 60px;
+  }
+  @media (max-width: 480px) {
+    padding: 16px 12px 50px;
+  }
 }
-
 .guard {
   display: flex;
   justify-content: center;
-  padding-top: 80px;
+  padding-top: 60px;
 }
-
-/* ── Tool header ─────────────────────────────────── */
 .tool-header {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
+  margin-bottom: 22px;
   flex-wrap: wrap;
-  margin-bottom: 24px;
 }
 .back-btn {
   width: 36px;
   height: 36px;
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--bg-surface);
   border: 1.5px solid var(--border-color);
@@ -391,127 +380,62 @@ onMounted(() => {
   justify-content: center;
   color: var(--text-muted);
   text-decoration: none;
-  flex-shrink: 0;
   &:hover {
     color: var(--text-primary);
   }
 }
 .tool-header-icon {
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   border-radius: 12px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
   &.blue {
     background: rgba(42, 171, 238, 0.1);
     color: #2aabee;
     border: 1.5px solid rgba(42, 171, 238, 0.2);
   }
+  @media (max-width: 480px) {
+    width: 36px;
+    height: 36px;
+  }
+}
+.tool-header-text {
+  min-width: 0;
 }
 .tool-title {
-  font-size: 1.15rem;
-  font-weight: 700;
+  font-size: 1.05rem;
+  font-weight: 800;
   color: var(--text-primary);
   margin: 0 0 2px;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tool-sub {
-  font-size: 0.8rem;
+  font-size: 0.76rem;
   color: var(--text-sub);
   margin: 0;
 }
 .tool-header-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin-inline-start: auto;
   flex-wrap: wrap;
 }
-
-/* ── Range switch ────────────────────────────────── */
-.range-switch {
-  display: flex;
-  background: var(--bg-surface);
-  border: 1.5px solid var(--border-color);
-  border-radius: 10px;
-  overflow: hidden;
-}
-.range-btn {
-  padding: 7px 11px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  font-family: "Tajawal", sans-serif;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--text-muted);
-  transition: all 0.18s;
-  &.active {
-    background: #2aabee;
-    color: #fff;
-  }
-}
-
-/* ── Scan progress ───────────────────────────────── */
 .scan-progress {
   margin-bottom: 16px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 .scan-label {
-  font-size: 0.78rem;
-  color: var(--text-muted);
-}
-
-/* ── Keyword bar ─────────────────────────────────── */
-.kw-filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-}
-.kw-label {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-.kw-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.kw-chip {
-  padding: 3px 11px;
-  border-radius: 20px;
   font-size: 0.76rem;
-  font-weight: 600;
-  font-family: "Tajawal", sans-serif;
-  background: var(--bg-surface);
-  border: 1.5px solid var(--border-color);
   color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.18s;
-  &.active {
-    background: #2aabee;
-    border-color: #2aabee;
-    color: #fff;
-  }
-}
-
-/* ── Keyword manager ─────────────────────────────── */
-.kw-manager {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: 14px;
-  padding: 14px;
-  margin-bottom: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }
 .kw-tags {
   display: flex;
@@ -526,8 +450,7 @@ onMounted(() => {
   border: 1px solid var(--border-color);
   border-radius: 20px;
   padding: 3px 10px;
-  font-size: 0.78rem;
-  font-weight: 500;
+  font-size: 0.77rem;
   color: var(--text-primary);
 }
 .kw-x {
@@ -546,126 +469,223 @@ onMounted(() => {
   display: flex;
   gap: 8px;
   align-items: flex-end;
+  flex-wrap: wrap;
 }
 
-/* ── Jobs grid ───────────────────────────────────── */
+/* ─── Range switch ───────────────────────────────────────────── */
+.range-switch {
+  display: flex;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.seg-btn {
+  padding: 7px 10px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  font-family: "Tajawal", sans-serif;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.18s;
+  white-space: nowrap;
+  &.active {
+    background: #2aabee;
+    color: #fff;
+  }
+
+  @media (max-width: 360px) {
+    padding: 6px 7px;
+    font-size: 0.7rem;
+  }
+}
+
+/* ─── Keyword filter bar ─────────────────────────────────────── */
+.kw-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.kw-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.kw-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.kw-chip {
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  font-family: "Tajawal", sans-serif;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.18s;
+  &.active {
+    background: #2aabee;
+    border-color: #2aabee;
+    color: #fff;
+  }
+}
+
+/* ─── Keyword manager ────────────────────────────────────────── */
+.kw-manager {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 13px;
+  padding: 13px;
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+/* ─── Jobs grid ──────────────────────────────────────────────── */
 .jobs-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+
+  @media (max-width: 560px) {
+    grid-template-columns: 1fr;
+    gap: 9px;
+  }
 }
 
-/* ── Job card ────────────────────────────────────── */
+/* ─── Job card ───────────────────────────────────────────────── */
 .job-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 16px;
-  padding: 18px;
+  border-radius: 14px;
+  padding: 15px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 9px;
   animation: card-in 0.3s ease both;
   transition:
     box-shadow 0.2s,
     transform 0.2s;
   &:hover {
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.07);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.07);
     transform: translateY(-2px);
   }
 }
+
 @keyframes card-in {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
+
 .jc-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
 }
+
 .ch-badge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   background: rgba(42, 171, 238, 0.1);
   color: #1a85c8;
   border-radius: 20px;
-  padding: 3px 10px;
-  font-size: 0.74rem;
+  padding: 2px 9px;
+  font-size: 0.72rem;
   font-weight: 600;
-  max-width: 60%;
+  max-width: 55%;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
 .jc-time {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 0.72rem;
+  gap: 3px;
+  font-size: 0.7rem;
   color: var(--text-muted);
 }
+
 .jc-text {
-  font-size: 0.86rem;
+  font-size: 0.84rem;
   color: var(--text-primary);
-  line-height: 1.7;
+  line-height: 1.65;
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
 }
+
 .jc-kws {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 4px;
 }
+
 .mk {
-  padding: 2px 8px;
+  padding: 2px 7px;
   background: rgba(211, 47, 47, 0.08);
   color: #d32f2f;
-  border-radius: 6px;
-  font-size: 0.71rem;
+  border-radius: 5px;
+  font-size: 0.69rem;
   font-weight: 600;
 }
+
 .jc-foot {
   display: flex;
-  gap: 6px;
+  gap: 5px;
   border-top: 1px solid var(--border-color);
-  padding-top: 10px;
+  padding-top: 9px;
   margin-top: auto;
   flex-wrap: wrap;
 }
+
 .jc-open {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 12px;
+  gap: 4px;
+  padding: 4px 11px;
   background: linear-gradient(135deg, #2aabee, #1a85c8);
   color: #fff !important;
-  border-radius: 8px;
-  font-size: 0.78rem;
+  border-radius: 7px;
+  font-size: 0.75rem;
   font-weight: 600;
   text-decoration: none;
-  transition: opacity 0.18s;
   &:hover {
     opacity: 0.87;
   }
 }
-.jc-copy,
-.jc-save {
+
+.jc-action-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 12px;
+  gap: 4px;
+  padding: 4px 11px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  font-size: 0.78rem;
+  border-radius: 7px;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--text-sub);
   cursor: pointer;
@@ -674,21 +694,25 @@ onMounted(() => {
   &:hover {
     background: var(--border-color);
   }
+  &.saved {
+    color: #2aabee;
+  }
 }
 
-/* ── Skeleton ────────────────────────────────────── */
+/* ─── Skeleton ───────────────────────────────────────────────── */
 .skeleton-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 16px;
-  padding: 18px;
+  border-radius: 14px;
+  padding: 15px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 9px;
 }
+
 .sk {
-  height: 11px;
-  border-radius: 6px;
+  height: 10px;
+  border-radius: 5px;
   background: linear-gradient(
     90deg,
     var(--border-color) 25%,
@@ -698,16 +722,18 @@ onMounted(() => {
   background-size: 200% 100%;
   animation: shimmer 1.3s infinite;
 }
+
 .sk-s {
-  width: 38%;
+  width: 36%;
 }
 .sk-m {
-  width: 65%;
+  width: 62%;
 }
 .sk-l {
   width: 100%;
-  height: 36px;
+  height: 34px;
 }
+
 @keyframes shimmer {
   0% {
     background-position: 200% 0;

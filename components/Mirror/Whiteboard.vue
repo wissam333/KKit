@@ -1,51 +1,67 @@
 <template>
   <div class="draw-layout">
-    <div class="draw-toolbar">
-      <div class="tool-group">
-        <button
-          v-for="tool in drawTools"
-          :key="tool.value"
-          class="draw-tool-btn"
-          :class="{ active: drawTool === tool.value }"
-          @click="drawTool = tool.value"
-        >
-          <Icon :name="tool.icon" size="16" />
-        </button>
+    <!-- Toolbar — scrollable on mobile -->
+    <div class="draw-toolbar-wrap">
+      <div class="draw-toolbar">
+        <div class="tool-group">
+          <button
+            v-for="tool in drawTools"
+            :key="tool.value"
+            class="draw-tool-btn"
+            :class="{ active: drawTool === tool.value }"
+            @click="drawTool = tool.value"
+          >
+            <Icon :name="tool.icon" size="15" />
+          </button>
+        </div>
+
+        <div class="tool-divider" />
+
+        <div class="tool-group colors-group">
+          <button
+            v-for="c in colors"
+            :key="c"
+            class="color-btn"
+            :class="{ active: drawColor === c }"
+            :style="{ background: c }"
+            @click="drawColor = c"
+          />
+        </div>
+
+        <div class="tool-divider" />
+
+        <div class="tool-group size-group">
+          <span class="size-label">{{ brushSize }}px</span>
+          <input
+            type="range"
+            v-model.number="brushSize"
+            min="2"
+            max="30"
+            class="size-slider"
+          />
+        </div>
+
+        <div class="tool-divider" />
+
+        <div class="tool-group">
+          <button class="draw-tool-btn" @click="undo" title="Undo">
+            <Icon name="mdi:undo" size="15" />
+          </button>
+          <button class="draw-tool-btn" @click="clearCanvas" title="Clear">
+            <Icon name="mdi:trash-can-outline" size="15" />
+          </button>
+          <button
+            class="draw-tool-btn"
+            @click="downloadCanvas"
+            title="Download"
+          >
+            <Icon name="mdi:download-outline" size="15" />
+          </button>
+        </div>
       </div>
-      <div class="tool-divider" />
-      <div class="tool-group">
-        <button
-          v-for="c in colors"
-          :key="c"
-          class="color-btn"
-          :class="{ active: drawColor === c }"
-          :style="{ background: c }"
-          @click="drawColor = c"
-        />
-      </div>
-      <div class="tool-divider" />
-      <div class="tool-group">
-        <span class="size-label">{{ brushSize }}px</span>
-        <input
-          type="range"
-          v-model.number="brushSize"
-          min="2"
-          max="30"
-          class="size-slider"
-        />
-      </div>
-      <div class="tool-divider" />
-      <button class="draw-tool-btn" @click="undo">
-        <Icon name="mdi:undo" size="16" />
-      </button>
-      <button class="draw-tool-btn" @click="clearCanvas">
-        <Icon name="mdi:trash-can-outline" size="16" />
-      </button>
-      <button class="draw-tool-btn" @click="downloadCanvas">
-        <Icon name="mdi:download-outline" size="16" />
-      </button>
     </div>
 
+    <!-- Canvas -->
     <div class="canvas-wrap">
       <canvas
         ref="canvasEl"
@@ -60,6 +76,7 @@
       />
     </div>
 
+    <!-- Share sidebar -->
     <div class="draw-side">
       <MirrorSharePanel :url="shareUrl" :status="peer.status.value" />
     </div>
@@ -71,7 +88,6 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 
 const props = defineProps({
   sessionId: String,
-  // hostPeerId is set when opened as viewer via URL
   hostPeerId: { type: String, default: "" },
 });
 
@@ -110,8 +126,8 @@ const shareUrl = computed(() => {
 });
 
 const gp = (e) => {
-  const el = canvasEl.value;
-  const r = el.getBoundingClientRect();
+  const el = canvasEl.value,
+    r = el.getBoundingClientRect();
   return {
     x: ((e.clientX - r.left) * el.width) / r.width,
     y: ((e.clientY - r.top) * el.height) / r.height,
@@ -132,7 +148,7 @@ const applyStroke = (ctx, s) => {
 };
 
 const startDraw = (e) => {
-  if (isViewer.value) return; // viewers can't draw
+  if (isViewer.value) return;
   drawing = true;
   const p = gp(e);
   lastX = p.x;
@@ -141,8 +157,8 @@ const startDraw = (e) => {
 
 const onDraw = (e) => {
   if (!drawing || !canvasEl.value || isViewer.value) return;
-  const { x, y } = gp(e);
-  const ctx = canvasEl.value.getContext("2d");
+  const { x, y } = gp(e),
+    ctx = canvasEl.value.getContext("2d");
   const color = drawTool.value === "eraser" ? "#ffffff" : drawColor.value;
   const size =
     drawTool.value === "marker" ? brushSize.value * 2.5 : brushSize.value;
@@ -153,7 +169,6 @@ const onDraw = (e) => {
   strokeBuffer.push(s);
   lastX = x;
   lastY = y;
-
   if (!flushTimer) {
     flushTimer = setTimeout(() => {
       if (strokeBuffer.length)
@@ -209,7 +224,7 @@ const initCanvas = () => {
   if (!canvasEl.value) return;
   const el = canvasEl.value;
   el.width = el.offsetWidth || 800;
-  el.height = el.offsetHeight || 480;
+  el.height = el.offsetHeight || 400;
   const ctx = el.getContext("2d");
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, el.width, el.height);
@@ -238,30 +253,20 @@ const handleMessage = (data) => {
 onMounted(async () => {
   await nextTick();
   initCanvas();
-
   if (isViewer.value) {
-    // Viewer: get a random peer ID, then connect TO the host
-    await peer.init(); // no fixed ID — let PeerJS assign random one
+    await peer.init();
     peer.onMessage(handleMessage);
     peer.connectTo(props.hostPeerId);
-
-    // Once connected, ask host to send full canvas state
     watch(peer.connectedPeers, (peers) => {
-      if (peers.length > 0) {
-        peer.broadcast({ type: "draw_request_full" });
-      }
+      if (peers.length > 0) peer.broadcast({ type: "draw_request_full" });
     });
   } else {
-    // Host: register with the stable session peer ID
     await peer.init(props.sessionId);
     peer.onMessage((data) => {
       handleMessage(data);
-      // New viewer requested full state
-      if (data.type === "draw_request_full") {
+      if (data.type === "draw_request_full")
         peer.broadcast({ type: "draw_full", strokes: strokes.value });
-      }
     });
-    // Send full state whenever anyone connects
     watch(peer.connectedPeers, () => {
       peer.broadcast({ type: "draw_full", strokes: strokes.value });
     });
@@ -274,37 +279,63 @@ onUnmounted(() => {
 </script>
 
 <style scoped lang="scss">
+/* ─── Layout ─────────────────────────────────────────── */
 .draw-layout {
   display: grid;
   grid-template-columns: 1fr 180px;
   grid-template-rows: auto 1fr;
   gap: 12px;
+
+  @media (max-width: 700px) {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto;
+  }
 }
+
+/* ─── Toolbar — scrollable on mobile ────────────────── */
+.draw-toolbar-wrap {
+  grid-column: 1 / 2;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  @media (max-width: 700px) {
+    grid-column: 1 / -1;
+  }
+}
+
 .draw-toolbar {
-  grid-column: 1/2;
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
   background: var(--bg-surface);
   border: 1.5px solid var(--border-color);
   border-radius: 12px;
-  padding: 8px 12px;
+  padding: 7px 10px;
+  width: max-content;
+  min-width: 100%;
 }
+
 .tool-group {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
 }
+
 .tool-divider {
   width: 1px;
-  height: 22px;
+  height: 20px;
   background: var(--border-color);
-  margin: 0 4px;
+  margin: 0 3px;
+  flex-shrink: 0;
 }
+
 .draw-tool-btn {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
   background: none;
   border: 1px solid transparent;
@@ -314,6 +345,8 @@ onUnmounted(() => {
   color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s;
+  flex-shrink: 0;
+
   &.active {
     background: rgba(20, 184, 166, 0.12);
     border-color: rgba(20, 184, 166, 0.3);
@@ -324,49 +357,87 @@ onUnmounted(() => {
     color: var(--text-primary);
   }
 }
+
+.colors-group {
+  gap: 5px;
+}
+
 .color-btn {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   cursor: pointer;
   border: 2px solid transparent;
+  flex-shrink: 0;
   transition: all 0.15s;
   &.active {
     border-color: var(--text-primary);
     transform: scale(1.2);
   }
 }
+
+.size-group {
+  gap: 6px;
+}
+
 .size-label {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
-  min-width: 30px;
+  min-width: 28px;
   text-align: center;
 }
+
 .size-slider {
-  width: 70px;
+  width: 64px;
   accent-color: #14b8a6;
+  flex-shrink: 0;
 }
+
+/* ─── Canvas ─────────────────────────────────────────── */
 .canvas-wrap {
-  grid-column: 1/2;
+  grid-column: 1 / 2;
   border-radius: 14px;
   overflow: hidden;
   border: 1.5px solid var(--border-color);
-  min-height: 440px;
+  min-height: 380px;
+
+  @media (max-width: 700px) {
+    grid-column: 1 / -1;
+    min-height: 280px;
+  }
+  @media (max-width: 480px) {
+    min-height: 220px;
+  }
 }
+
 .draw-canvas {
   width: 100%;
   height: 100%;
-  min-height: 440px;
+  min-height: 380px;
   cursor: crosshair;
   display: block;
   touch-action: none;
   background: #fff;
+
+  @media (max-width: 700px) {
+    min-height: 280px;
+  }
+  @media (max-width: 480px) {
+    min-height: 220px;
+  }
 }
+
+/* ─── Side / share ───────────────────────────────────── */
 .draw-side {
-  grid-column: 2/3;
-  grid-row: 1/3;
+  grid-column: 2 / 3;
+  grid-row: 1 / 3;
   display: flex;
   flex-direction: column;
   gap: 10px;
+
+  @media (max-width: 700px) {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
 }
 </style>

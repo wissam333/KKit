@@ -12,57 +12,58 @@
           />
           <span class="live-label">{{ $t("live") }}</span>
           <button class="icon-btn" @click="clearContent">
-            <Icon name="mdi:delete-outline" size="15" />
+            <Icon name="mdi:delete-outline" size="14" />
           </button>
           <button class="icon-btn" @click="copyContent">
             <Icon
               :name="noteCopied ? 'mdi:check' : 'mdi:content-copy'"
-              size="15"
+              size="14"
             />
           </button>
         </div>
       </div>
+
       <textarea
         v-model="noteContent"
         class="note-textarea"
         :placeholder="$t('startTyping')"
         @input="onInput"
       />
+
       <div class="editor-footer">
         <span class="char-info"
           >{{ noteContent.length }} {{ $t("chars") }} · {{ lineCount }}
           {{ $t("lines") }}</span
         >
-        <span class="session-badge"
-          ><Icon name="mdi:key-outline" size="12" />{{
-            peerId.slice(0, 8)
-          }}</span
-        >
+        <span class="session-badge">
+          <Icon name="mdi:key-outline" size="11" />{{ peerId.slice(0, 8) }}
+        </span>
       </div>
     </div>
 
+    <!-- Side column collapses on mobile into a bottom section -->
     <div class="side-col">
       <MirrorSharePanel :url="shareUrl" :status="peer.status.value" />
 
       <div class="hint-card">
-        <Icon name="mdi:information-outline" size="16" class="hint-icon" />
+        <Icon name="mdi:information-outline" size="15" class="hint-icon" />
         <p class="hint-text">{{ $t("bothDevicesSameWifi") }}</p>
       </div>
 
       <div class="peers-card">
         <div class="peers-title">
-          <Icon name="mdi:devices" size="15" />{{ $t("connectedDevices") }}
+          <Icon name="mdi:devices" size="14" />{{ $t("connectedDevices") }}
         </div>
         <div class="peer-list">
           <div class="peer-row peer-row--self">
-            <Icon name="mdi:monitor" size="15" />
+            <Icon name="mdi:monitor" size="14" />
             <span
               >{{ $t("thisDevice") }}
               <span class="self-badge">{{ $t("host") }}</span></span
             >
           </div>
           <div v-for="p in peer.connectedPeers.value" :key="p" class="peer-row">
-            <Icon name="mdi:cellphone" size="15" />
+            <Icon name="mdi:cellphone" size="14" />
             <span>{{ p.slice(0, 8) }}</span>
             <span class="peer-dot" />
           </div>
@@ -116,12 +117,11 @@ const copyContent = async () => {
 
 onMounted(async () => {
   if (isViewer.value) {
-    await peer.init(); // random ID for viewer
+    await peer.init();
     peer.onMessage((data) => {
       if (data.type === "note") noteContent.value = data.text;
     });
     peer.connectTo(props.hostPeerId);
-    // Ask for current note once connected
     watch(peer.connectedPeers, (peers) => {
       if (peers.length > 0) peer.broadcast({ type: "note_request" });
     });
@@ -129,9 +129,8 @@ onMounted(async () => {
     await peer.init(props.sessionId);
     peer.onMessage((data) => {
       if (data.type === "note") noteContent.value = data.text;
-      if (data.type === "note_request") {
+      if (data.type === "note_request")
         peer.broadcast({ type: "note", text: noteContent.value });
-      }
     });
     watch(peer.connectedPeers, () => {
       peer.broadcast({ type: "note", text: noteContent.value });
@@ -141,14 +140,21 @@ onMounted(async () => {
 </script>
 
 <style scoped lang="scss">
+/* ─── Layout ─────────────────────────────────────────── */
 .two-col {
   display: grid;
-  grid-template-columns: 1fr 240px;
-  gap: 16px;
-  @media (max-width: 700px) {
+  grid-template-columns: 1fr 230px;
+  gap: 14px;
+
+  @media (max-width: 800px) {
+    grid-template-columns: 1fr 200px;
+  }
+  @media (max-width: 600px) {
     grid-template-columns: 1fr;
   }
 }
+
+/* ─── Editor panel ───────────────────────────────────── */
 .editor-panel {
   background: var(--bg-surface);
   border: 1.5px solid var(--border-color);
@@ -157,13 +163,16 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
 }
+
 .panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border-color);
+  gap: 8px;
 }
+
 .panel-title {
   display: flex;
   align-items: center;
@@ -171,15 +180,20 @@ onMounted(async () => {
   font-size: 0.82rem;
   font-weight: 700;
   color: var(--text-primary);
+  white-space: nowrap;
 }
+
 .panel-actions {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
 }
+
 .live-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
   border-radius: 50%;
   background: var(--border-color);
   &.active {
@@ -187,15 +201,17 @@ onMounted(async () => {
     box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
   }
 }
+
 .live-label {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
   font-weight: 600;
 }
+
 .icon-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
   background: none;
   border: 1px solid var(--border-color);
   display: flex;
@@ -205,101 +221,135 @@ onMounted(async () => {
   cursor: pointer;
   &:hover {
     color: var(--text-primary);
-    background: var(--bg-surface);
+    background: var(--bg-elevated);
   }
 }
+
 .note-textarea {
   flex: 1;
-  min-height: 340px;
-  padding: 16px;
+  min-height: 300px;
+  padding: 14px 16px;
   background: transparent;
   border: none;
   outline: none;
   resize: none;
-  font-size: 0.92rem;
+  font-size: 0.9rem;
   font-family: "Courier New", monospace;
   color: var(--text-primary);
   line-height: 1.7;
+
+  @media (max-width: 480px) {
+    min-height: 220px;
+    font-size: 0.85rem;
+    padding: 12px;
+  }
+
   &::placeholder {
     color: var(--text-muted);
   }
 }
+
 .editor-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 14px;
+  padding: 7px 14px;
   border-top: 1px solid var(--border-color);
+  gap: 8px;
+  flex-wrap: wrap;
 }
+
 .char-info {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
 }
+
 .session-badge {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--text-muted);
   background: var(--bg-elevated);
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  flex-shrink: 0;
 }
+
+/* ─── Side column ────────────────────────────────────── */
 .side-col {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+
+  @media (max-width: 600px) {
+    /* On mobile: lay them out in a row */
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+  @media (max-width: 400px) {
+    grid-template-columns: 1fr;
+  }
 }
+
 .hint-card {
-  background: rgba(20, 184, 166, 0.06);
-  border: 1px solid rgba(20, 184, 166, 0.2);
+  background: rgba(20, 184, 166, 0.05);
+  border: 1px solid rgba(20, 184, 166, 0.18);
   border-radius: 12px;
-  padding: 12px;
+  padding: 11px 12px;
   display: flex;
   gap: 8px;
   align-items: flex-start;
 }
+
 .hint-icon {
   color: #14b8a6;
   flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: 1px;
 }
+
 .hint-text {
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   color: var(--text-sub);
   margin: 0;
   line-height: 1.5;
 }
+
 .peers-card {
   background: var(--bg-surface);
   border: 1.5px solid var(--border-color);
   border-radius: 12px;
-  padding: 12px;
+  padding: 11px 12px;
 }
+
 .peers-title {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.78rem;
+  font-size: 0.77rem;
   font-weight: 700;
   color: var(--text-primary);
-  margin-bottom: 10px;
+  margin-bottom: 9px;
 }
+
 .peer-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
+
 .peer-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.78rem;
+  gap: 7px;
+  font-size: 0.76rem;
   color: var(--text-sub);
   &--self {
     color: var(--text-primary);
   }
 }
+
 .peer-dot {
   width: 6px;
   height: 6px;
@@ -307,17 +357,19 @@ onMounted(async () => {
   background: #22c55e;
   margin-inline-start: auto;
 }
+
 .self-badge {
   display: inline-block;
-  padding: 1px 6px;
+  padding: 1px 5px;
   border-radius: 4px;
   background: rgba(20, 184, 166, 0.1);
   color: #14b8a6;
-  font-size: 0.65rem;
+  font-size: 0.63rem;
   font-weight: 700;
 }
+
 .peer-empty {
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   color: var(--text-muted);
   font-style: italic;
 }

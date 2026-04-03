@@ -392,5 +392,18 @@
   "howStep2": "يفتح المشاهد الرابط على جهازه (نفس Wi-Fi)",
   "howStep3": "يتصل كلاهما بخادم إشارات WebSocket المحلي لـ Nuxt",
   "howStep4": "فيديو WebRTC من نظير إلى نظير — لا يغادر شبكتك أبدًا",
-  "requiresHttps": "يتطلب HTTPS (شغّل nuxt dev --https). الفيديو من نظير إلى نظير."
+  "requiresHttps": "يتطلب HTTPS (شغّل nuxt dev --https). الفيديو من نظير إلى نظير.",
+  "videoCall": "مكالمة فيديو",
+  "startVideoCall": "بدء مكالمة فيديو",
+  "audioOnly": "صوت فقط",
+  "calling": "جارٍ الاتصال",
+  "incomingCall": "مكالمة واردة",
+  "answer": "رد",
+  "decline": "رفض",
+  "connected": "متصل",
+  "waitingForRemote": "في انتظار الجهاز الآخر…",
+  "waitingForPeer": "في انتظار اتصال الطرف الآخر…",
+  "peerConnected": "تم اتصال الطرف الآخر — جاهز للمكالمة",
+  "readyToCall": "جاهز للمكالمة",
+  "remoteDevice": "الجهاز البعيد"
 }

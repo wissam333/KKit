@@ -4,9 +4,8 @@
     <div class="screen-panel">
       <div class="screen-panel-header">
         <div class="sph-left">
-          <Icon name="mdi:monitor-share" size="16" /><span>{{
-            $t("hostShareScreen")
-          }}</span>
+          <Icon name="mdi:monitor-share" size="16" />
+          <span>{{ $t("hostShareScreen") }}</span>
         </div>
         <span class="sc-badge" :class="hostState">{{ hostStateLabel }}</span>
       </div>
@@ -19,97 +18,88 @@
         >
       </div>
 
-      <!-- Step 1: Peer connecting -->
       <div class="sc-step" v-if="hostState === 'idle'">
         <div class="sc-num">1</div>
         <div class="sc-body">
           <p class="sc-title">Connecting to network…</p>
           <div class="sc-spinner-row">
-            <Icon name="mdi:loading" size="18" class="spin" /><span
-              >Setting up peer connection</span
-            >
+            <Icon name="mdi:loading" size="18" class="spin" />
+            <span>Setting up peer connection</span>
           </div>
         </div>
       </div>
 
-      <!-- Step 2: Ready to capture -->
       <div class="sc-step" v-if="hostState === 'ready'">
         <div class="sc-num">1</div>
         <div class="sc-body">
           <p class="sc-title">{{ $t("captureYourScreen") }}</p>
           <p class="sc-desc">{{ $t("captureDesc") }}</p>
           <button class="sc-btn" :disabled="!isSecure" @click="startCapture">
-            <Icon name="mdi:cast-variant" size="16" />{{
-              $t("startScreenCapture")
-            }}
+            <Icon name="mdi:cast-variant" size="16" />
+            {{ $t("startScreenCapture") }}
           </button>
         </div>
       </div>
 
-      <!-- Preview + link after capture -->
-      <template v-if="hostState === 'captured' || hostState === 'streaming'">
-        <div class="sc-preview-wrap">
-          <video
-            ref="hostVideoEl"
-            class="sc-video"
-            autoplay
-            muted
-            playsinline
+      <!-- Single video always in DOM -->
+      <div
+        class="sc-preview-wrap"
+        :style="{
+          display:
+            hostState === 'idle' || hostState === 'ready' ? 'none' : 'block',
+        }"
+      >
+        <video ref="hostVideoEl" class="sc-video" autoplay muted playsinline />
+        <div class="sc-preview-badge">
+          <span class="live-dot active" />{{ $t("yourScreenPreview") }}
+        </div>
+      </div>
+
+      <div class="sc-step" v-if="hostState === 'captured'">
+        <div class="sc-num">2</div>
+        <div class="sc-body">
+          <p class="sc-title">{{ $t("sendLinkToViewer") }}</p>
+          <div class="share-link-row">
+            <span class="share-link-text">{{ viewerUrl }}</span>
+            <button class="sc-btn sm" @click="copyViewerUrl">
+              <Icon
+                :name="viewerUrlCopied ? 'mdi:check' : 'mdi:content-copy'"
+                size="13"
+              />
+              {{ viewerUrlCopied ? $t("copied") : $t("copy") }}
+            </button>
+          </div>
+          <canvas
+            ref="screenQrEl"
+            class="qr-canvas-sm"
+            style="margin-top: 10px"
           />
-          <div class="sc-preview-badge">
-            <span class="live-dot active" />{{ $t("yourScreenPreview") }}
+          <p class="sc-desc" style="margin-top: 8px">
+            {{ $t("waitingForViewer") }}
+          </p>
+          <div class="sc-waiting-anim">
+            <span class="dot-pulse" />
+            <span class="dot-pulse" style="animation-delay: 0.2s" />
+            <span class="dot-pulse" style="animation-delay: 0.4s" />
           </div>
         </div>
+      </div>
 
-        <div class="sc-step" v-if="hostState === 'captured'">
-          <div class="sc-num">2</div>
-          <div class="sc-body">
-            <p class="sc-title">{{ $t("sendLinkToViewer") }}</p>
-            <div class="share-link-row">
-              <span class="share-link-text">{{ viewerUrl }}</span>
-              <button class="sc-btn sm" @click="copyViewerUrl">
-                <Icon
-                  :name="viewerUrlCopied ? 'mdi:check' : 'mdi:content-copy'"
-                  size="13"
-                />
-                {{ viewerUrlCopied ? $t("copied") : $t("copy") }}
-              </button>
-            </div>
-            <canvas
-              ref="screenQrEl"
-              class="qr-canvas-sm"
-              style="margin-top: 10px"
-            />
-            <p class="sc-desc" style="margin-top: 8px">
-              {{ $t("waitingForViewer") }}
-            </p>
-            <div class="sc-waiting-anim">
-              <span class="dot-pulse" /><span
-                class="dot-pulse"
-                style="animation-delay: 0.2s"
-              /><span class="dot-pulse" style="animation-delay: 0.4s" />
-            </div>
-          </div>
-        </div>
-
-        <div class="sc-connected-banner" v-if="hostState === 'streaming'">
-          <Icon name="mdi:check-circle-outline" size="18" />{{
-            $t("viewerConnectedStreaming")
-          }}
-          <button class="sc-stop-btn" @click="stopShare">
-            <Icon name="mdi:stop-circle-outline" size="13" />{{ $t("stop") }}
-          </button>
-        </div>
-      </template>
+      <div class="sc-connected-banner" v-if="hostState === 'streaming'">
+        <Icon name="mdi:check-circle-outline" size="18" />
+        {{ $t("viewerConnectedStreaming") }}
+        <button class="sc-stop-btn" @click="stopShare">
+          <Icon name="mdi:stop-circle-outline" size="13" />{{ $t("stop") }}
+        </button>
+      </div>
     </div>
 
     <!-- VIEWER PANEL -->
     <div class="screen-panel">
       <div class="screen-panel-header">
         <div class="sph-left">
-          <Icon name="mdi:television-play" size="16" /><span>{{
-            $t("viewerWatchSharedScreen")
-          }}</span>
+          <Icon name="mdi:television-play" size="16" />
+          <span>{{ $t("viewerWatchSharedScreen") }}</span>
         </div>
         <span class="sc-badge" :class="viewerState">{{
           viewerStateLabel
@@ -127,10 +117,9 @@
             Open the viewer link from the host, or scan their QR code.
           </p>
           <div class="sc-waiting-anim" style="margin-top: 10px">
-            <span class="dot-pulse" /><span
-              class="dot-pulse"
-              style="animation-delay: 0.2s"
-            /><span class="dot-pulse" style="animation-delay: 0.4s" />
+            <span class="dot-pulse" />
+            <span class="dot-pulse" style="animation-delay: 0.2s" />
+            <span class="dot-pulse" style="animation-delay: 0.4s" />
           </div>
         </div>
       </div>
@@ -140,9 +129,8 @@
         <div class="sc-body">
           <p class="sc-title">{{ $t("connectingToHost") }}</p>
           <div class="sc-spinner-row">
-            <Icon name="mdi:loading" size="18" class="spin" /><span>{{
-              $t("webrtcHandshake")
-            }}</span>
+            <Icon name="mdi:loading" size="18" class="spin" />
+            <span>{{ $t("webrtcHandshake") }}</span>
           </div>
         </div>
       </div>
@@ -218,17 +206,15 @@ const { $toast } = useNuxtApp();
 const { t } = useI18n();
 const peer = useMirrorPeer();
 
-const hostVideoEl = ref(null);
-const viewerVideoEl = ref(null);
-const screenQrEl = ref(null);
-
-const hostState = ref("idle");
-const viewerState = ref("idle");
-const viewerMuted = ref(false);
-const viewerUrlCopied = ref(false);
-
-let localStream = null;
-let activeMediaConns = []; // host can stream to multiple viewers
+const hostVideoEl = ref(null),
+  viewerVideoEl = ref(null),
+  screenQrEl = ref(null);
+const hostState = ref("idle"),
+  viewerState = ref("idle");
+const viewerMuted = ref(false),
+  viewerUrlCopied = ref(false);
+let localStream = null,
+  activeMediaConns = [];
 
 const isSecure = computed(() => {
   if (!import.meta.client) return true;
@@ -247,7 +233,6 @@ const hostStateLabel = computed(
       streaming: t("streaming"),
     })[hostState.value] ?? "",
 );
-
 const viewerStateLabel = computed(
   () =>
     ({
@@ -263,7 +248,6 @@ const viewerUrl = computed(() => {
   return `${window.location.origin}/toolbox/mirror?peer=${peer.peerId.value}&mode=screen&role=viewer`;
 });
 
-// ── QR ────────────────────────────────────────────────────────────────────────
 const loadQR = () =>
   new Promise((res, rej) => {
     if (window.QRCode) return res();
@@ -278,17 +262,17 @@ const loadQR = () =>
 const renderQR = async (el, url) => {
   if (!el || !url) return;
   await loadQR();
-  el.width = 140;
-  el.height = 140;
+  el.width = 130;
+  el.height = 130;
   const ctx = el.getContext("2d");
-  ctx.clearRect(0, 0, 140, 140);
+  ctx.clearRect(0, 0, 130, 130);
   const tmp = document.createElement("div");
   document.body.appendChild(tmp);
   try {
     new window.QRCode(tmp, {
       text: url,
-      width: 140,
-      height: 140,
+      width: 130,
+      height: 130,
       colorDark: "#0f172a",
       colorLight: "#ffffff",
       correctLevel: window.QRCode.CorrectLevel.M,
@@ -306,7 +290,6 @@ watch(
   },
 );
 
-// ── Host: capture screen ──────────────────────────────────────────────────────
 const startCapture = async () => {
   try {
     localStream = await navigator.mediaDevices.getDisplayMedia({
@@ -314,22 +297,19 @@ const startCapture = async () => {
       audio: true,
     });
 
-    // Show preview to host immediately
-    await nextTick();
+    // ref is always in DOM now — assign directly
     if (hostVideoEl.value) {
       hostVideoEl.value.srcObject = localStream;
-      // Force play — needed on some browsers
       hostVideoEl.value.play().catch(() => {});
     }
 
     hostState.value = "captured";
     localStream.getVideoTracks()[0].addEventListener("ended", stopShare);
 
+    // QR can still use nextTick since screenQrEl is inside a v-if
     await nextTick();
     renderQR(screenQrEl.value, viewerUrl.value);
 
-    // ← HOST calls any already-connected viewers immediately
-    // (viewers that connected before capture started)
     for (const viewerId of peer.connectedPeers.value) {
       callViewer(viewerId);
     }
@@ -340,28 +320,21 @@ const startCapture = async () => {
   }
 };
 
-// ── Host calls a viewer (correct direction!) ──────────────────────────────────
 const callViewer = (viewerDataPeerId) => {
   if (!localStream) return;
   const peerInstance = peer.getPeer();
   if (!peerInstance) return;
-
   try {
     const call = peerInstance.call(viewerDataPeerId, localStream);
     activeMediaConns.push(call);
     hostState.value = "streaming";
-
     call.on("close", () => {
       activeMediaConns = activeMediaConns.filter((c) => c !== call);
-      if (activeMediaConns.length === 0 && hostState.value === "streaming") {
+      if (activeMediaConns.length === 0 && hostState.value === "streaming")
         hostState.value = "captured";
-      }
       $toast?.info("A viewer disconnected.");
     });
-
-    call.on("error", (e) => {
-      console.warn("[ScreenShare] call error:", e);
-    });
+    call.on("error", (e) => console.warn("[ScreenShare] call error:", e));
   } catch (e) {
     console.warn("[ScreenShare] callViewer error:", e);
   }
@@ -372,47 +345,37 @@ const stopShare = () => {
   activeMediaConns.forEach((c) => c.close());
   activeMediaConns = [];
   localStream = null;
+  // safe to clear even though element is always in DOM
   if (hostVideoEl.value) hostVideoEl.value.srcObject = null;
   hostState.value = "ready";
-  // Notify viewers via data channel
   peer.broadcast({ type: "screen_stopped" });
 };
 
-// ── Viewer: receive call from host ────────────────────────────────────────────
 const setupViewerCallHandling = () => {
   const peerInstance = peer.getPeer();
   if (!peerInstance) return;
-
-  // Viewer answers incoming calls from host
   peerInstance.on("call", async (call) => {
     viewerState.value = "connecting";
-    // Answer with no stream — we only want to receive
     call.answer();
-
     call.on("stream", async (remoteStream) => {
       await nextTick();
       if (viewerVideoEl.value) {
         viewerVideoEl.value.srcObject = remoteStream;
-        // Unmuted autoplay needs a user gesture on mobile;
-        // muting allows autoplay without gesture
         viewerVideoEl.value.muted = false;
         try {
           await viewerVideoEl.value.play();
         } catch {
-          // If autoplay blocked, mute and retry
           viewerVideoEl.value.muted = true;
           viewerVideoEl.value.play().catch(() => {});
         }
         viewerState.value = "connected";
       }
     });
-
     call.on("close", () => {
       viewerState.value = "waiting";
       if (viewerVideoEl.value) viewerVideoEl.value.srcObject = null;
       $toast?.info("Host stopped sharing.");
     });
-
     call.on("error", (e) => {
       viewerState.value = "waiting";
       $toast?.error("Connection error: " + e.message);
@@ -420,36 +383,24 @@ const setupViewerCallHandling = () => {
   });
 };
 
-// ── Viewer: tell host "I'm here" via data channel so host calls me ────────────
 const announceAsViewer = () => {
-  // Connect to the host peer's data channel so host knows we're here
   peer.connectTo(props.viewerPeerId);
-
-  // Wait for data connection to open, then the host's connectedPeers watcher
-  // will fire and host will call us with the stream
-  // Also send a ping so host can call immediately
   setTimeout(() => {
     peer.broadcast({ type: "viewer_here" });
   }, 800);
 };
 
-// Host watches for new data connections and calls them if stream is active
 const setupHostViewerWatcher = () => {
   watch(peer.connectedPeers, (newPeers, oldPeers) => {
     if (!localStream) return;
-    // Find newly added peers
     const added = newPeers.filter((p) => !oldPeers?.includes(p));
     for (const viewerId of added) {
       callViewer(viewerId);
       hostState.value = "streaming";
     }
   });
-
-  // Also handle viewer_here messages (backup signal)
   peer.onMessage((data, fromPeerId) => {
-    if (data.type === "viewer_here" && localStream) {
-      callViewer(fromPeerId);
-    }
+    if (data.type === "viewer_here" && localStream) callViewer(fromPeerId);
     if (data.type === "screen_stopped") {
       viewerState.value = "waiting";
       if (viewerVideoEl.value) viewerVideoEl.value.srcObject = null;
@@ -463,14 +414,11 @@ const copyViewerUrl = async () => {
   $toast?.success("Viewer link copied!");
   setTimeout(() => (viewerUrlCopied.value = false), 2000);
 };
-
 const toggleMute = () => {
   viewerMuted.value = !viewerMuted.value;
   if (viewerVideoEl.value) viewerVideoEl.value.muted = viewerMuted.value;
 };
-
 const goFullscreen = () => viewerVideoEl.value?.requestFullscreen?.();
-
 const screenshot = () => {
   if (!viewerVideoEl.value) return;
   const c = document.createElement("canvas");
@@ -485,17 +433,12 @@ const screenshot = () => {
 
 onMounted(async () => {
   const isViewer = !!props.viewerPeerId;
-
   await peer.init(props.sessionId);
-
   if (isViewer) {
-    // ── VIEWER SIDE ──
     viewerState.value = "connecting";
     setupViewerCallHandling();
-    // Connect data channel to host so host knows we exist
     announceAsViewer();
   } else {
-    // ── HOST SIDE ──
     hostState.value = "ready";
     viewerState.value = "waiting";
     setupHostViewerWatcher();
@@ -509,14 +452,18 @@ onUnmounted(() => {
 </script>
 
 <style scoped lang="scss">
+/* ─── Layout ─────────────────────────────────────────── */
 .screen-layout {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  @media (max-width: 720px) {
+  gap: 14px;
+
+  @media (max-width: 640px) {
     grid-template-columns: 1fr;
   }
 }
+
+/* ─── Panel shell ────────────────────────────────────── */
 .screen-panel {
   background: var(--bg-surface);
   border: 1.5px solid var(--border-color);
@@ -525,42 +472,55 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
 }
+
 .screen-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 11px 14px;
+  padding: 10px 13px;
   border-bottom: 1px solid var(--border-color);
+  gap: 8px;
 }
+
 .sph-left {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.82rem;
+  gap: 7px;
+  font-size: 0.8rem;
   font-weight: 700;
   color: var(--text-primary);
+  min-width: 0;
+  span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
+
 .warn-banner {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   background: rgba(245, 158, 11, 0.08);
   border-bottom: 1px solid rgba(245, 158, 11, 0.3);
-  padding: 10px 14px;
-  font-size: 0.78rem;
+  padding: 9px 13px;
+  font-size: 0.76rem;
   color: #b45309;
+  line-height: 1.5;
   code {
     background: var(--bg-elevated);
-    padding: 1px 6px;
+    padding: 1px 5px;
     border-radius: 4px;
-    font-size: 0.75rem;
+    font-size: 0.72rem;
   }
 }
+
 .sc-badge {
-  padding: 2px 9px;
+  padding: 2px 8px;
   border-radius: 20px;
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-weight: 700;
+  flex-shrink: 0;
   &.idle,
   &.waiting {
     background: var(--bg-elevated);
@@ -580,61 +540,67 @@ onUnmounted(() => {
     color: #22c55e;
   }
 }
+
+/* ─── Step rows ──────────────────────────────────────── */
 .sc-step {
   display: flex;
-  gap: 12px;
-  padding: 14px;
+  gap: 11px;
+  padding: 13px 13px;
   border-bottom: 1px solid var(--border-color);
   &:last-child {
     border-bottom: none;
   }
 }
+
 .sc-num {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
+  width: 22px;
+  height: 22px;
   flex-shrink: 0;
-  background: rgba(20, 184, 166, 0.12);
-  border: 1.5px solid rgba(20, 184, 166, 0.25);
+  border-radius: 50%;
+  background: rgba(20, 184, 166, 0.1);
+  border: 1.5px solid rgba(20, 184, 166, 0.2);
   color: #14b8a6;
-  font-size: 0.73rem;
+  font-size: 0.7rem;
   font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
 }
+
 .sc-body {
   flex: 1;
   min-width: 0;
 }
+
 .sc-title {
-  font-size: 0.85rem;
+  font-size: 0.84rem;
   font-weight: 700;
   color: var(--text-primary);
   margin: 0 0 4px;
 }
 .sc-desc {
-  font-size: 0.77rem;
+  font-size: 0.75rem;
   color: var(--text-sub);
-  margin: 0 0 10px;
+  margin: 0 0 9px;
   line-height: 1.5;
 }
+
 .sc-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 16px;
+  padding: 7px 14px;
   border-radius: 9px;
   background: #14b8a6;
   border: none;
   color: #fff;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 700;
   font-family: "Tajawal", sans-serif;
   cursor: pointer;
   &.sm {
-    padding: 5px 10px;
-    font-size: 0.75rem;
+    padding: 4px 9px;
+    font-size: 0.72rem;
   }
   &:disabled {
     opacity: 0.35;
@@ -644,21 +610,25 @@ onUnmounted(() => {
     opacity: 0.85;
   }
 }
+
 .sc-spinner-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.8rem;
+  gap: 7px;
+  font-size: 0.78rem;
   color: var(--text-sub);
 }
+
+/* ─── Preview video ──────────────────────────────────── */
 .sc-preview-wrap {
   position: relative;
-  margin: 12px;
+  margin: 10px;
   border-radius: 10px;
   overflow: hidden;
   background: #000;
   aspect-ratio: 16/9;
 }
+
 .sc-video {
   width: 100%;
   height: 100%;
@@ -668,22 +638,24 @@ onUnmounted(() => {
     background: #0f172a;
   }
 }
+
 .sc-preview-badge {
   position: absolute;
-  bottom: 8px;
-  left: 10px;
+  bottom: 7px;
+  left: 9px;
   display: flex;
   align-items: center;
   gap: 5px;
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
-  font-size: 0.7rem;
-  padding: 3px 10px;
+  font-size: 0.68rem;
+  padding: 2px 8px;
   border-radius: 20px;
 }
+
 .live-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--border-color);
   &.active {
@@ -691,42 +663,48 @@ onUnmounted(() => {
     box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
   }
 }
+
 .share-link-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 7px;
+  margin-bottom: 8px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 7px 9px;
 }
+
 .share-link-text {
   flex: 1;
-  font-size: 0.65rem;
+  font-size: 0.62rem;
   color: var(--text-muted);
   word-break: break-all;
 }
+
 .qr-canvas-sm {
-  border-radius: 8px;
+  border-radius: 7px;
   background: #fff;
-  width: 140px;
-  height: 140px;
+  width: 130px;
+  height: 130px;
   display: block;
 }
+
 .sc-waiting-anim {
   display: flex;
-  gap: 6px;
-  padding: 8px 0;
+  gap: 5px;
+  padding: 6px 0;
 }
+
 .dot-pulse {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: #14b8a6;
   opacity: 0.3;
   animation: pulse 1s ease-in-out infinite;
 }
+
 @keyframes pulse {
   0%,
   100% {
@@ -738,28 +716,30 @@ onUnmounted(() => {
     transform: scale(1.3);
   }
 }
+
 .sc-connected-banner {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 14px;
-  background: rgba(34, 197, 94, 0.06);
-  border-top: 1px solid rgba(34, 197, 94, 0.2);
-  font-size: 0.82rem;
+  gap: 7px;
+  padding: 10px 13px;
+  background: rgba(34, 197, 94, 0.05);
+  border-top: 1px solid rgba(34, 197, 94, 0.18);
+  font-size: 0.8rem;
   color: #16a34a;
   font-weight: 600;
 }
+
 .sc-stop-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   margin-inline-start: auto;
-  padding: 4px 12px;
-  border-radius: 7px;
+  padding: 3px 10px;
+  border-radius: 6px;
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.25);
   color: #ef4444;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 700;
   font-family: "Tajawal", sans-serif;
   cursor: pointer;
@@ -767,9 +747,11 @@ onUnmounted(() => {
     background: rgba(239, 68, 68, 0.18);
   }
 }
+
+/* ─── Viewer video ───────────────────────────────────── */
 .sc-viewer-wrap {
   position: relative;
-  margin: 12px;
+  margin: 10px;
   border-radius: 10px;
   overflow: hidden;
   background: #0f172a;
@@ -778,6 +760,7 @@ onUnmounted(() => {
     display: none;
   }
 }
+
 .sc-viewer-placeholder {
   position: absolute;
   inset: 0;
@@ -786,23 +769,25 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.2);
   p {
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     margin: 0;
   }
 }
+
 .sc-viewer-controls {
   position: absolute;
-  bottom: 10px;
-  right: 10px;
+  bottom: 9px;
+  right: 9px;
   display: flex;
-  gap: 6px;
+  gap: 5px;
 }
+
 .sc-ctrl-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
   background: rgba(0, 0, 0, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: #fff;
@@ -814,54 +799,63 @@ onUnmounted(() => {
     background: rgba(0, 0, 0, 0.8);
   }
 }
+
+/* ─── How it works ───────────────────────────────────── */
 .sc-how {
-  padding: 12px 14px;
+  padding: 11px 13px;
   border-top: 1px solid var(--border-color);
 }
+
 .how-title {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 0.75rem;
+  font-size: 0.73rem;
   font-weight: 700;
   color: var(--text-muted);
-  margin-bottom: 8px;
+  margin-bottom: 7px;
 }
+
 .how-steps {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 8px;
+  gap: 5px;
+  margin-bottom: 7px;
 }
+
 .how-step {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  font-size: 0.75rem;
+  gap: 7px;
+  font-size: 0.72rem;
   color: var(--text-sub);
   line-height: 1.4;
 }
+
 .how-dot {
-  width: 17px;
-  height: 17px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   flex-shrink: 0;
   background: var(--bg-elevated);
   color: var(--text-muted);
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
 }
+
 .how-note {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--text-muted);
   margin: 0;
 }
+
+/* ─── Spin ───────────────────────────────────────────── */
 .spin {
   animation: spin 0.8s linear infinite;
 }

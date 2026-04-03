@@ -125,7 +125,7 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: "KgramKit",
+      title: "KKit",
       htmlAttrs: {
         lang: "ar",
       },

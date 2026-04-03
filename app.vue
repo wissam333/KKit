@@ -23,8 +23,8 @@ useHead({
 
 // Global Default Meta
 useSeoMeta({
-  ogSiteName: "KgramKit",
+  ogSiteName: "KKit",
   twitterCard: "summary_large_image",
-  ogImage: "/uae-handbal-logo.png",
+  ogImage: "/logo.png",
 });
 </script>
