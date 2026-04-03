@@ -1,6 +1,8 @@
 // composables/useMirrorPeer.js
 import { ref, onUnmounted } from "vue";
 
+const RECONNECT_GRACE_MS = 30_000; // 30 s hidden before we try to heal connections
+
 export const useMirrorPeer = () => {
   const peerId = ref("");
   const status = ref("idle");
@@ -9,6 +11,29 @@ export const useMirrorPeer = () => {
   let peer = null;
   let connections = new Map();
   const messageHandlers = new Set();
+
+  // ── visibility-grace tracking ──────────────────────────────────────────────
+  let hiddenAt = null;
+  let visibilityTimer = null;
+
+  const onVisibilityChange = () => {
+    if (document.hidden) {
+      // Tab went away — remember when
+      hiddenAt = Date.now();
+    } else {
+      // Tab came back
+      const elapsed = hiddenAt ? Date.now() - hiddenAt : 0;
+      hiddenAt = null;
+      clearTimeout(visibilityTimer);
+
+      if (elapsed >= RECONNECT_GRACE_MS) {
+        // Was hidden long enough that connections may have died — heal them
+        _healConnections();
+      }
+      // else: hidden for a short time, do nothing
+    }
+  };
+  // ──────────────────────────────────────────────────────────────────────────
 
   const loadPeerJS = () =>
     new Promise((resolve, reject) => {
@@ -28,7 +53,6 @@ export const useMirrorPeer = () => {
       await loadPeerJS();
       if (peer && !peer.destroyed) peer.destroy();
 
-      // Use explicit STUN/TURN so mobile across networks works
       peer = new window.Peer(desiredId || undefined, {
         debug: 0,
         config: {
@@ -79,6 +103,9 @@ export const useMirrorPeer = () => {
       peer.on("connection", (conn) => {
         setupConnection(conn);
       });
+
+      // Register visibility listener once peer is alive
+      document.addEventListener("visibilitychange", onVisibilityChange);
     } catch (err) {
       status.value = "error";
       console.error("[MirrorPeer] init failed:", err);
@@ -115,6 +142,20 @@ export const useMirrorPeer = () => {
     });
   };
 
+  // Re-open any connection that closed while the tab was hidden
+  const _healConnections = () => {
+    const deadPeers = [...connectedPeers.value].filter((id) => {
+      const conn = connections.get(id);
+      return !conn || !conn.open;
+    });
+
+    for (const id of deadPeers) {
+      connections.delete(id);
+      connectedPeers.value = connectedPeers.value.filter((p) => p !== id);
+      connectTo(id); // attempt reconnect
+    }
+  };
+
   const connectTo = (remotePeerId) => {
     if (!peer || peer.destroyed) return null;
     if (connections.has(remotePeerId)) return connections.get(remotePeerId);
@@ -146,6 +187,10 @@ export const useMirrorPeer = () => {
   const getPeer = () => peer;
 
   const destroy = () => {
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+    clearTimeout(visibilityTimer);
+    hiddenAt = null;
+
     if (peer && !peer.destroyed) peer.destroy();
     connections.clear();
     connectedPeers.value = [];
