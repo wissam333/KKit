@@ -10,7 +10,7 @@
       <!-- Headline -->
       <div class="entry-headline">
         <span class="entry-eyebrow">{{ $t("welcomeTo") }}</span>
-        <h1 class="entry-title">DevKit</h1>
+        <h1 class="entry-title">KKit</h1>
         <p class="entry-desc">{{ $t("entryDesc") }}</p>
       </div>
 
