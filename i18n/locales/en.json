@@ -392,5 +392,19 @@
   "howStep2": "Viewer opens the link on their device (same Wi-Fi)",
   "howStep3": "Both connect to the local Nuxt WebSocket signaling server",
   "howStep4": "WebRTC peer-to-peer video — never leaves your network",
-  "requiresHttps": "Requires HTTPS (run nuxt dev --https). Video is peer-to-peer."
+  "requiresHttps": "Requires HTTPS (run nuxt dev --https). Video is peer-to-peer.",
+  "": "",
+  "videoCall": "Video Call",
+  "startVideoCall": "Start Video Call",
+  "audioOnly": "Audio Only",
+  "calling": "Calling",
+  "incomingCall": "Incoming Call",
+  "answer": "Answer",
+  "decline": "Decline",
+  "connected": "Connected",
+  "waitingForRemote": "Waiting for other device…",
+  "waitingForPeer": "Waiting for peer to connect…",
+  "peerConnected": "Peer connected — ready to call",
+  "readyToCall": "Ready to call",
+  "remoteDevice": "Remote Device"
 }

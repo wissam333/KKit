@@ -54,6 +54,11 @@
           mode === 'screen' && roleParam === 'viewer' ? hostPeerId : ''
         "
       />
+      <MirrorCall
+        v-if="mode === 'call'"
+        :session-id="callSessionId"
+        :host-peer-id="mode === 'call' ? hostPeerId : ''"
+      />
     </template>
   </div>
 </template>
@@ -76,7 +81,12 @@ const modes = [
     icon: "mdi:clipboard-text-outline",
   },
   { value: "screen", labelKey: "screenShare", icon: "mdi:monitor-share" },
+  { value: "call", labelKey: "videoCall", icon: "mdi:video-outline" },
 ];
+
+const callSessionId = computed(() =>
+  sessionId.value ? `${sessionId.value}-call` : "",
+);
 
 // Host peer IDs per mode (stable, derived from session)
 const notepadSessionId = computed(() =>
@@ -96,8 +106,8 @@ const screenSessionId = computed(() =>
 // Host components receive empty string hostPeerId so they know they're the host
 const roleParam = ref("");
 onMounted(() => {
-  roleParam.value = params.get("role") ?? "";
   const params = new URLSearchParams(window.location.search);
+  roleParam.value = params.get("role") ?? "";
   const peerParam = params.get("peer"); // e.g. "ABC123-draw"
   const modeParam = params.get("mode"); // e.g. "draw"
   const sessionParam = params.get("session");
