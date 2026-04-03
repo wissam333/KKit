@@ -76,30 +76,34 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from "vue"; // ← watch was missing
+import { ref, computed, onMounted, watch } from "vue";
 
-const props = defineProps({ sessionId: String });
+const props = defineProps({
+  sessionId: String,
+  hostPeerId: { type: String, default: "" },
+});
+
 const { $toast } = useNuxtApp();
 const noteContent = ref("");
 const noteCopied = ref(false);
 const lineCount = computed(() => noteContent.value.split("\n").length);
+const isViewer = computed(() => !!props.hostPeerId);
 
 const peer = useMirrorPeer();
 const peerId = peer.peerId;
 
-const { fetchIp, buildUrl } = useLocalUrl();
 const shareUrl = computed(() => {
-  if (!import.meta.client || !peer.peerId.value) return "";
-  return buildUrl(
-    `/toolbox/mirror?peer=${peer.peerId.value}&mode=screen&role=viewer`,
-  );
+  if (!import.meta.client || !peerId.value) return "";
+  return `${window.location.origin}/toolbox/mirror?peer=${peerId.value}&mode=notepad`;
 });
 
 const onInput = () => {
+  if (isViewer.value) return;
   peer.broadcast({ type: "note", text: noteContent.value });
 };
 
 const clearContent = () => {
+  if (isViewer.value) return;
   noteContent.value = "";
   onInput();
 };
@@ -111,18 +115,28 @@ const copyContent = async () => {
 };
 
 onMounted(async () => {
-  await fetchIp();
-  await peer.init(props.sessionId);
-
-  peer.onMessage((data) => {
-    if (data.type === "note") noteContent.value = data.text;
-  });
-
-  // ← watch is now properly imported, this will work
-  watch(peer.connectedPeers, () => {
-    // Send current note to any newly joined peer
-    peer.broadcast({ type: "note", text: noteContent.value });
-  });
+  if (isViewer.value) {
+    await peer.init(); // random ID for viewer
+    peer.onMessage((data) => {
+      if (data.type === "note") noteContent.value = data.text;
+    });
+    peer.connectTo(props.hostPeerId);
+    // Ask for current note once connected
+    watch(peer.connectedPeers, (peers) => {
+      if (peers.length > 0) peer.broadcast({ type: "note_request" });
+    });
+  } else {
+    await peer.init(props.sessionId);
+    peer.onMessage((data) => {
+      if (data.type === "note") noteContent.value = data.text;
+      if (data.type === "note_request") {
+        peer.broadcast({ type: "note", text: noteContent.value });
+      }
+    });
+    watch(peer.connectedPeers, () => {
+      peer.broadcast({ type: "note", text: noteContent.value });
+    });
+  }
 });
 </script>
 

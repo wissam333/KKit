@@ -88,22 +88,24 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 
-const props = defineProps({ sessionId: String });
+const props = defineProps({
+  sessionId: String,
+  hostPeerId: { type: String, default: "" },
+});
+
 const { $toast } = useNuxtApp();
 const peer = useMirrorPeer();
+const isViewer = computed(() => !!props.hostPeerId);
 
 const clips = ref([]);
 const newClip = ref("");
 let clipId = 0;
 
-const { fetchIp, buildUrl } = useLocalUrl();
 const shareUrl = computed(() => {
   if (!import.meta.client || !peer.peerId.value) return "";
-  return buildUrl(
-    `/toolbox/mirror?peer=${peer.peerId.value}&mode=screen&role=viewer`,
-  );
+  return `${window.location.origin}/toolbox/mirror?peer=${peer.peerId.value}&mode=clipboard`;
 });
 
 const send = () => {
@@ -128,19 +130,28 @@ const copyItem = async (item) => {
   await navigator.clipboard.writeText(item.text);
   $toast?.success("Copied!");
 };
+
 const removeItem = (id) => {
   clips.value = clips.value.filter((c) => c.id !== id);
 };
 
 onMounted(async () => {
-  await fetchIp();
-  await peer.init(props.sessionId);
-
-  peer.onMessage((data) => {
-    if (data.type === "clip") {
-      clips.value.unshift({ ...data.item, id: ++clipId, fromSelf: false });
-    }
-  });
+  if (isViewer.value) {
+    await peer.init(); // random ID
+    peer.onMessage((data) => {
+      if (data.type === "clip") {
+        clips.value.unshift({ ...data.item, id: ++clipId, fromSelf: false });
+      }
+    });
+    peer.connectTo(props.hostPeerId);
+  } else {
+    await peer.init(props.sessionId);
+    peer.onMessage((data) => {
+      if (data.type === "clip") {
+        clips.value.unshift({ ...data.item, id: ++clipId, fromSelf: false });
+      }
+    });
+  }
 });
 </script>
 

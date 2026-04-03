@@ -19,7 +19,8 @@
     </div>
 
     <template v-else>
-      <div class="mode-tabs">
+      <!-- Hide tab switcher for viewers — they're locked to their mode -->
+      <div v-if="!hostPeerId" class="mode-tabs">
         <button
           v-for="m in modes"
           :key="m.value"
@@ -31,21 +32,31 @@
         </button>
       </div>
 
-      <MirrorNotepad v-if="mode === 'notepad'" :session-id="notepadSessionId" />
-      <MirrorWhiteboard v-if="mode === 'draw'" :session-id="drawSessionId" />
+      <MirrorNotepad
+        v-if="mode === 'notepad'"
+        :session-id="notepadSessionId"
+        :host-peer-id="mode === 'notepad' ? hostPeerId : ''"
+      />
+      <MirrorWhiteboard
+        v-if="mode === 'draw'"
+        :session-id="drawSessionId"
+        :host-peer-id="mode === 'draw' ? hostPeerId : ''"
+      />
       <MirrorClipboard
         v-if="mode === 'clipboard'"
         :session-id="clipboardSessionId"
+        :host-peer-id="mode === 'clipboard' ? hostPeerId : ''"
       />
       <MirrorScreenShare
         v-if="mode === 'screen'"
         :session-id="screenSessionId"
-        :viewer-peer-id="viewerPeerId"
+        :viewer-peer-id="
+          mode === 'screen' && roleParam === 'viewer' ? hostPeerId : ''
+        "
       />
     </template>
   </div>
 </template>
-
 <script setup>
 import { ref, computed, onMounted } from "vue";
 
@@ -54,7 +65,7 @@ const router = useRouter();
 
 const sessionId = ref("");
 const mode = ref("screen");
-const viewerPeerId = ref("");
+const hostPeerId = ref(""); // ← the host's actual peer ID when viewing
 
 const modes = [
   { value: "notepad", labelKey: "notepad", icon: "mdi:note-text-outline" },
@@ -67,7 +78,7 @@ const modes = [
   { value: "screen", labelKey: "screenShare", icon: "mdi:monitor-share" },
 ];
 
-// Each mode gets a unique peer ID derived from the base session so they never clash
+// Host peer IDs per mode (stable, derived from session)
 const notepadSessionId = computed(() =>
   sessionId.value ? `${sessionId.value}-note` : "",
 );
@@ -81,37 +92,34 @@ const screenSessionId = computed(() =>
   sessionId.value ? `${sessionId.value}-scrn` : "",
 );
 
+// When viewing, hostPeerId is the peer URL param — pass it to the active component
+// Host components receive empty string hostPeerId so they know they're the host
+const roleParam = ref("");
 onMounted(() => {
+  roleParam.value = params.get("role") ?? "";
   const params = new URLSearchParams(window.location.search);
-  const peerParam = params.get("peer");
-  const modeParam = params.get("mode");
-  const roleParam = params.get("role");
+  const peerParam = params.get("peer"); // e.g. "ABC123-draw"
+  const modeParam = params.get("mode"); // e.g. "draw"
   const sessionParam = params.get("session");
 
-  if (peerParam) {
-    // Joining via a shared link — extract the base session from the peer ID
-    // Peer IDs are like "ABC123-note", "ABC123-scrn" etc.
+  if (peerParam && modeParam) {
+    // ── VIEWER opening a shared link ──
+    // Extract base session from peer ID (e.g. "ABC123-draw" → "ABC123")
     const parts = peerParam.split("-");
     parts.pop();
     sessionId.value = parts.join("-") || peerParam;
-
-    if (modeParam) mode.value = modeParam;
-
-    // Auto-connect viewer to host for screen share
-    if (modeParam === "screen" && roleParam === "viewer") {
-      viewerPeerId.value = peerParam;
-    }
+    mode.value = modeParam;
+    hostPeerId.value = peerParam; // full peer ID including suffix
   } else if (sessionParam) {
     sessionId.value = sessionParam;
   } else {
-    // Brand new session
+    // Brand new host session
     const newId = Math.random().toString(36).slice(2, 8).toUpperCase();
     sessionId.value = newId;
     router.replace({ query: { session: newId } });
   }
 });
 </script>
-
 <style scoped lang="scss">
 .tool-page {
   max-width: 1000px;

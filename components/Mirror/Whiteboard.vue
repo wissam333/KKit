@@ -67,11 +67,17 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 
-const props = defineProps({ sessionId: String });
+const props = defineProps({
+  sessionId: String,
+  // hostPeerId is set when opened as viewer via URL
+  hostPeerId: { type: String, default: "" },
+});
+
 const peer = useMirrorPeer();
 const canvasEl = ref(null);
+const isViewer = computed(() => !!props.hostPeerId);
 
 const drawTool = ref("pen");
 const drawColor = ref("#1e293b");
@@ -98,12 +104,9 @@ let drawing = false,
 let strokeBuffer = [],
   flushTimer = null;
 
-const { fetchIp, buildUrl } = useLocalUrl();
 const shareUrl = computed(() => {
   if (!import.meta.client || !peer.peerId.value) return "";
-  return buildUrl(
-    `/toolbox/mirror?peer=${peer.peerId.value}&mode=screen&role=viewer`,
-  );
+  return `${window.location.origin}/toolbox/mirror?peer=${peer.peerId.value}&mode=draw`;
 });
 
 const gp = (e) => {
@@ -129,13 +132,15 @@ const applyStroke = (ctx, s) => {
 };
 
 const startDraw = (e) => {
+  if (isViewer.value) return; // viewers can't draw
   drawing = true;
   const p = gp(e);
   lastX = p.x;
   lastY = p.y;
 };
+
 const onDraw = (e) => {
-  if (!drawing || !canvasEl.value) return;
+  if (!drawing || !canvasEl.value || isViewer.value) return;
   const { x, y } = gp(e);
   const ctx = canvasEl.value.getContext("2d");
   const color = drawTool.value === "eraser" ? "#ffffff" : drawColor.value;
@@ -158,6 +163,7 @@ const onDraw = (e) => {
     }, 40);
   }
 };
+
 const stopDraw = () => {
   drawing = false;
 };
@@ -177,13 +183,14 @@ const replayAll = (ctx, list) => {
 };
 
 const undo = () => {
-  if (!strokes.value.length) return;
+  if (!strokes.value.length || isViewer.value) return;
   strokes.value.pop();
   replayAll(canvasEl.value.getContext("2d"), strokes.value);
   peer.broadcast({ type: "draw_full", strokes: strokes.value });
 };
 
 const clearCanvas = () => {
+  if (isViewer.value) return;
   strokes.value = [];
   const ctx = canvasEl.value.getContext("2d");
   ctx.fillStyle = "#fff";
@@ -208,40 +215,57 @@ const initCanvas = () => {
   ctx.fillRect(0, 0, el.width, el.height);
 };
 
+const handleMessage = (data) => {
+  if (!canvasEl.value) return;
+  const ctx = canvasEl.value.getContext("2d");
+  if (data.type === "draw") {
+    data.strokes.forEach((s) => {
+      strokes.value.push(s);
+      applyStroke(ctx, s);
+    });
+  }
+  if (data.type === "draw_full") {
+    strokes.value = data.strokes;
+    replayAll(ctx, strokes.value);
+  }
+  if (data.type === "draw_clear") {
+    strokes.value = [];
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvasEl.value.width, canvasEl.value.height);
+  }
+};
+
 onMounted(async () => {
-  await fetchIp();
   await nextTick();
   initCanvas();
-  await peer.init(props.sessionId);
 
-  peer.onMessage((data) => {
-    if (!canvasEl.value) return;
-    const ctx = canvasEl.value.getContext("2d");
-    if (data.type === "draw") {
-      data.strokes.forEach((s) => {
-        strokes.value.push(s);
-        applyStroke(ctx, s);
-      });
-    }
-    if (data.type === "draw_full") {
-      strokes.value = data.strokes;
-      replayAll(ctx, strokes.value);
-    }
-    if (data.type === "draw_clear") {
-      strokes.value = [];
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(0, 0, canvasEl.value.width, canvasEl.value.height);
-    }
-    // New joiner — send full canvas state
-    if (data.type === "hello") {
+  if (isViewer.value) {
+    // Viewer: get a random peer ID, then connect TO the host
+    await peer.init(); // no fixed ID — let PeerJS assign random one
+    peer.onMessage(handleMessage);
+    peer.connectTo(props.hostPeerId);
+
+    // Once connected, ask host to send full canvas state
+    watch(peer.connectedPeers, (peers) => {
+      if (peers.length > 0) {
+        peer.broadcast({ type: "draw_request_full" });
+      }
+    });
+  } else {
+    // Host: register with the stable session peer ID
+    await peer.init(props.sessionId);
+    peer.onMessage((data) => {
+      handleMessage(data);
+      // New viewer requested full state
+      if (data.type === "draw_request_full") {
+        peer.broadcast({ type: "draw_full", strokes: strokes.value });
+      }
+    });
+    // Send full state whenever anyone connects
+    watch(peer.connectedPeers, () => {
       peer.broadcast({ type: "draw_full", strokes: strokes.value });
-    }
-  });
-
-  // Send current canvas when someone new joins
-  watch(peer.connectedPeers, () => {
-    peer.broadcast({ type: "draw_full", strokes: strokes.value });
-  });
+    });
+  }
 });
 
 onUnmounted(() => {
