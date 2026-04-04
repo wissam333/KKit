@@ -29,26 +29,44 @@ export default defineNuxtConfig({
         "Real-time room for video calls, whiteboard, chat & screen share",
       theme_color: "#14b8a6",
       background_color: "#0f172a",
-      display: "standalone",
-      orientation: "portrait-primary",
-      start_url: "/toolbox/rooms",
-      scope: "/toolbox/",
+      display: "standalone", // works for both desktop + android
+      orientation: "any", // ← was "portrait-primary", blocks desktop
+      start_url: "/",
+      scope: "/",
       icons: [
         {
           src: "/pwa-192.png",
           sizes: "192x192",
           type: "image/png",
+          purpose: "any",
         },
         {
           src: "/pwa-512.png",
           sizes: "512x512",
           type: "image/png",
+          purpose: "any",
         },
+        {
+          src: "/pwa-512.png", // ideally a separate maskable icon
+          sizes: "512x512",
+          type: "image/png",
+          purpose: "maskable", // ← split into its own entry, not "any maskable"
+        },
+      ],
+      screenshots: [
         {
           src: "/pwa-512.png",
           sizes: "512x512",
           type: "image/png",
-          purpose: "any maskable",
+          form_factor: "wide", // desktop
+          label: "Mirror Room Desktop",
+        },
+        {
+          src: "/pwa-192.png",
+          sizes: "192x192",
+          type: "image/png",
+          form_factor: "narrow", // mobile/android
+          label: "Mirror Room Mobile",
         },
       ],
     },
@@ -61,10 +79,7 @@ export default defineNuxtConfig({
           handler: "CacheFirst",
           options: {
             cacheName: "cdn-cache",
-            expiration: {
-              maxEntries: 10,
-              maxAgeSeconds: 60 * 60 * 24 * 7, // 7 days
-            },
+            expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 7 },
           },
         },
         {
@@ -72,10 +87,7 @@ export default defineNuxtConfig({
           handler: "CacheFirst",
           options: {
             cacheName: "bootstrap-cache",
-            expiration: {
-              maxEntries: 5,
-              maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
-            },
+            expiration: { maxEntries: 5, maxAgeSeconds: 60 * 60 * 24 * 30 },
           },
         },
       ],
@@ -85,8 +97,7 @@ export default defineNuxtConfig({
       periodicSyncForUpdates: 3600,
     },
     devOptions: {
-      enabled: false, // enable during dev if needed
-      suppressWarnings: true,
+      enabled: true,
       type: "module",
     },
   },
@@ -227,7 +238,7 @@ export default defineNuxtConfig({
           href: "/pwa-192.png",
         },
       ],
-      script: [],
+      script: [{ src: "/pwa-init.js", tagPosition: "head" }],
     },
   },
 

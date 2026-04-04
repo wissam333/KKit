@@ -4,6 +4,7 @@
     <NuxtLayout>
       <main id="main-content">
         <NuxtPage />
+        <PwaInstallBanner />
       </main>
     </NuxtLayout>
     <SharedUiFeedbackToast position="center" :duration="6000" />
@@ -12,6 +13,8 @@
 
 <script setup>
 const { locale } = useI18n();
+const { setup } = usePwaInstall();
+onMounted(() => setup());
 
 // Dynamic Page Title Template
 useHead({
