@@ -200,8 +200,15 @@ import { useTelegram } from "~/composables/useTelegram";
 
 const { locale, t } = useI18n();
 const { $toast } = useNuxtApp();
-const { connect, sendCode, signIn, getSession, disconnect, isConnected } =
-  useTelegram();
+const {
+  isConnected,
+  restoreSession,
+  sendCode,
+  signIn,
+  disconnect,
+  getSession,
+  getCreds,
+} = useTelegram();
 
 const step = ref("connect");
 const showGuide = ref(false);
@@ -299,25 +306,21 @@ onMounted(async () => {
     return;
   }
   const session = localStorage.getItem("tg_session");
-  const creds = localStorage.getItem("tg_creds");
-  if (session && creds) {
-    const c = JSON.parse(creds);
+  const raw = localStorage.getItem("tg_creds");
+  if (session && raw) {
+    const c = JSON.parse(raw);
     form.apiId = c.apiId;
     form.apiHash = c.apiHash;
     try {
-      await connect({ apiId: c.apiId, apiHash: c.apiHash, session });
+      await restoreSession({ apiId: c.apiId, apiHash: c.apiHash, session });
       step.value = "dashboard";
       $toast.success(t("gramkit.toast.sessionRestored"));
     } catch {
-      clearSavedSession();
+      localStorage.removeItem("tg_session");
+      localStorage.removeItem("tg_creds");
     }
   }
 });
-
-const clearSavedSession = () => {
-  localStorage.removeItem("tg_session");
-  localStorage.removeItem("tg_creds");
-};
 
 const handleConnect = async () => {
   if (!form.apiId || !form.apiHash || !form.phone) {
@@ -326,7 +329,6 @@ const handleConnect = async () => {
   }
   connecting.value = true;
   try {
-    // sendCode now stores the temp client + codeHash internally
     await sendCode({
       apiId: form.apiId,
       apiHash: form.apiHash,
@@ -335,7 +337,9 @@ const handleConnect = async () => {
     step.value = "otp";
     $toast.info(t("gramkit.toast.codeSent"));
   } catch (e) {
-    $toast.error(t("gramkit.toast.error") + ": " + e.message);
+    $toast.error(
+      t("gramkit.toast.error") + ": " + (e.data?.message ?? e.message),
+    );
   } finally {
     connecting.value = false;
   }
@@ -346,22 +350,15 @@ const handleSignIn = async () => {
   if (code.length < 5) return;
   signing.value = true;
   try {
-    // signIn promotes the temp client; returns the saved session string
-    const savedSession = await signIn({
-      apiId: form.apiId,
-      apiHash: form.apiHash,
-      phone: form.phone,
-      code,
-    });
+    const savedSession = await signIn({ phone: form.phone, code });
     localStorage.setItem("tg_session", savedSession);
-    localStorage.setItem(
-      "tg_creds",
-      JSON.stringify({ apiId: form.apiId, apiHash: form.apiHash }),
-    );
+    localStorage.setItem("tg_creds", JSON.stringify(getCreds()));
     step.value = "dashboard";
     $toast.success(t("gramkit.toast.connected"));
   } catch (e) {
-    $toast.error(t("gramkit.toast.error") + ": " + e.message);
+    $toast.error(
+      t("gramkit.toast.error") + ": " + (e.data?.message ?? e.message),
+    );
   } finally {
     signing.value = false;
   }
@@ -369,7 +366,8 @@ const handleSignIn = async () => {
 
 const handleLogout = () => {
   disconnect();
-  clearSavedSession();
+  localStorage.removeItem("tg_session");
+  localStorage.removeItem("tg_creds");
   step.value = "connect";
 };
 

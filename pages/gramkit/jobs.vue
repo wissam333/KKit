@@ -192,11 +192,9 @@
 </template>
 
 <script setup>
-import { useTelegram } from "~/composables/useTelegram";
-
 const { locale, t } = useI18n();
 const { $toast } = useNuxtApp();
-const { isConnected, scanAllChannels } = useTelegram();
+const { isConnected, getSession, getCreds } = useTelegram();
 
 const searchDays = ref(0);
 const rangeOptions = computed(() => [
@@ -274,47 +272,21 @@ const scanJobs = async () => {
   scanProgress.value = 0;
   scanDone.value = 0;
   jobs.value = [];
-  const cutoff = new Date();
-  if (searchDays.value === 0) cutoff.setHours(0, 0, 0, 0);
-  else {
-    cutoff.setDate(cutoff.getDate() - searchDays.value);
-    cutoff.setHours(0, 0, 0, 0);
-  }
   try {
-    await scanAllChannels({
-      limit: 100,
-      cutoffDate: cutoff,
-      onEachMessage: (msg, ch) => {
-        const lower = msg.message.toLowerCase();
-        const matched = keywords.value.filter((kw) =>
-          lower.includes(kw.toLowerCase()),
-        );
-        if (matched.length)
-          jobs.value.push({
-            id: `${ch.id}_${msg.id}`,
-            channel: ch.title,
-            text: msg.message,
-            time: new Date(msg.date * 1000).toLocaleString(
-              locale.value === "ar" ? "ar-EG" : "en-GB",
-              {
-                month: "short",
-                day: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-              },
-            ),
-            link: ch.entity?.username
-              ? `https://t.me/${ch.entity.username}/${msg.id}`
-              : null,
-            matchedKeywords: matched,
-          });
-      },
-      onProgress: (done, total) => {
-        scanDone.value = done;
-        scanTotal.value = total;
-        scanProgress.value = Math.round((done / total) * 100);
+    const result = await $fetch("/api/tg/jobs/scan", {
+      method: "POST",
+      body: {
+        ...getCreds(),
+        session: getSession(),
+        searchDays: searchDays.value,
+        keywords: keywords.value,
+        locale: locale.value,
       },
     });
+    jobs.value = result.jobs;
+    scanProgress.value = 100;
+    scanDone.value = result.scanned;
+    scanTotal.value = result.scanned;
     if (!jobs.value.length) $toast.info(t("gramkit.toast.noJobs"));
     else $toast.success(`${jobs.value.length} ${t("gramkit.toast.jobsFound")}`);
   } catch {

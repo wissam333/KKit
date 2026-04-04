@@ -158,18 +158,16 @@
 </template>
 
 <script setup>
-import { useTelegram } from "~/composables/useTelegram";
-
 const { locale, t } = useI18n();
 const { $toast } = useNuxtApp();
-const { isConnected, getDialogs, getMessages } = useTelegram();
+const { isConnected, getSession, getCreds } = useTelegram();
 
 const isRunning = ref(false);
 const checkCount = ref(0);
 const countdown = ref(0);
 const monitorKeywords = ref(["مطلوب", "وظيفة", "vacancy", "hiring"]);
 const newKw = ref("");
-const interval = ref(120); // seconds
+const interval = ref(120);
 const alerts = ref([]);
 let timer = null;
 let countdownTimer = null;
@@ -194,51 +192,29 @@ const removeKw = (kw) => {
 
 const runCheck = async () => {
   try {
-    const dialogs = await getDialogs({ limit: 200 });
-    const cutoff = new Date(Date.now() - interval.value * 2 * 1000); // look back 2x interval
-    for (const ch of dialogs) {
-      try {
-        const msgs = await getMessages(ch.entity, { limit: 20 });
-        for (const msg of msgs) {
-          if (!msg.message) continue;
-          if (new Date(msg.date * 1000) < cutoff) continue;
-          const msgKey = `${ch.id}_${msg.id}`;
-          if (seenIds.has(msgKey)) continue;
-          seenIds.add(msgKey);
-          const lower = msg.message.toLowerCase();
-          const matched = monitorKeywords.value.filter((kw) =>
-            lower.includes(kw.toLowerCase()),
-          );
-          if (matched.length) {
-            alerts.value.unshift({
-              id: alertId++,
-              channel: ch.title,
-              text: msg.message,
-              time: new Date(msg.date * 1000).toLocaleString(
-                locale.value === "ar" ? "ar-EG" : "en-GB",
-                {
-                  month: "short",
-                  day: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                },
-              ),
-              link: ch.entity?.username
-                ? `https://t.me/${ch.entity.username}/${msg.id}`
-                : null,
-              keywords: matched,
-              isNew: true,
-            });
-            $toast.success(`🔔 ${ch.title}: ${matched.join(", ")}`);
-            setTimeout(() => {
-              if (alerts.value[0]) alerts.value[0].isNew = false;
-            }, 3000);
-          }
-        }
-      } catch {}
+    const result = await $fetch("/api/tg/monitor/check", {
+      method: "POST",
+      body: {
+        ...getCreds(),
+        session: getSession(),
+        keywords: monitorKeywords.value,
+        lookbackSeconds: interval.value * 2,
+        seenIds: [...seenIds],
+        locale: locale.value,
+      },
+    });
+    for (const hit of result.hits) {
+      seenIds.add(hit.msgKey);
+      alerts.value.unshift({ id: alertId++, ...hit, isNew: true });
+      $toast.success(`🔔 ${hit.channel}: ${hit.keywords.join(", ")}`);
+      setTimeout(() => {
+        if (alerts.value[0]) alerts.value[0].isNew = false;
+      }, 3000);
     }
     checkCount.value++;
-  } catch {}
+  } catch {
+    /* silent */
+  }
 };
 
 const startMonitor = async () => {
@@ -270,7 +246,6 @@ onUnmounted(() => {
   clearInterval(timer);
   clearInterval(countdownTimer);
 });
-
 </script>
 
 <style scoped lang="scss">

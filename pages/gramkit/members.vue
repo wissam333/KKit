@@ -116,11 +116,9 @@
 </template>
 
 <script setup>
-import { useTelegram } from "~/composables/useTelegram";
-
 const { locale, t } = useI18n();
 const { $toast } = useNuxtApp();
-const { isConnected, getDialogs, getMembers } = useTelegram();
+const { isConnected, getSession, getCreds } = useTelegram();
 
 const selectedChannel = ref(null);
 const loadingDialogs = ref(false);
@@ -136,7 +134,6 @@ const channelOptions = computed(() =>
     icon: d.isChannel ? "mdi:bullhorn-outline" : "mdi:account-group-outline",
   })),
 );
-
 const filteredMembers = computed(() => {
   if (!search.value) return members.value;
   const q = search.value.toLowerCase();
@@ -146,7 +143,6 @@ const filteredMembers = computed(() => {
     ),
   );
 });
-
 const statCards = computed(() => [
   {
     key: "total",
@@ -175,7 +171,10 @@ onMounted(async () => {
   if (!isConnected.value) return;
   loadingDialogs.value = true;
   try {
-    dialogs.value = await getDialogs();
+    dialogs.value = await $fetch("/api/tg/dialogs", {
+      method: "POST",
+      body: { ...getCreds(), session: getSession() },
+    });
   } finally {
     loadingDialogs.value = false;
   }
@@ -185,10 +184,14 @@ const fetchMembers = async () => {
   loading.value = true;
   members.value = [];
   try {
-    const dialog = dialogs.value.find(
-      (d) => d.id?.toString() === selectedChannel.value,
-    );
-    members.value = await getMembers(dialog.entity, { limit: 500 });
+    members.value = await $fetch("/api/tg/members", {
+      method: "POST",
+      body: {
+        ...getCreds(),
+        session: getSession(),
+        channelId: selectedChannel.value,
+      },
+    });
     if (!members.value.length) $toast.info(t("gramkit.members.noMembers"));
     else
       $toast.success(`${members.value.length} ${t("gramkit.members.fetched")}`);
@@ -203,7 +206,7 @@ const exportCSV = () => {
   const header = "ID,First Name,Last Name,Username,Phone,Is Bot";
   const rows = members.value.map((m) =>
     [m.id, m.firstName, m.lastName, m.username, m.phone, m.isBot]
-      .map((v) => `"${v ?? ""}"`)
+      .map((v) => '"' + (v ?? "") + '"')
       .join(","),
   );
   const csv = [header, ...rows].join("\n");
@@ -216,7 +219,6 @@ const exportCSV = () => {
   URL.revokeObjectURL(url);
   $toast.success(t("gramkit.members.exported"));
 };
-
 </script>
 
 <style scoped lang="scss">

@@ -120,11 +120,9 @@
 </template>
 
 <script setup>
-import { useTelegram } from "~/composables/useTelegram";
-
 const { locale, t } = useI18n();
 const { $toast } = useNuxtApp();
-const { isConnected, getDialogs, getMediaList, downloadMedia } = useTelegram();
+const { isConnected, getSession, getCreds } = useTelegram();
 
 const selectedChannel = ref(null);
 const loadingDialogs = ref(false);
@@ -147,13 +145,11 @@ const channelOptions = computed(() =>
     icon: "mdi:telegram",
   })),
 );
-
 const filteredMedia = computed(() =>
   typeFilter.value === "all"
     ? mediaList.value
     : mediaList.value.filter((m) => m.type === typeFilter.value),
 );
-
 const statCards = computed(() => [
   {
     key: "total",
@@ -182,7 +178,10 @@ onMounted(async () => {
   if (!isConnected.value) return;
   loadingDialogs.value = true;
   try {
-    dialogs.value = await getDialogs();
+    dialogs.value = await $fetch("/api/tg/dialogs", {
+      method: "POST",
+      body: { ...getCreds(), session: getSession() },
+    });
   } finally {
     loadingDialogs.value = false;
   }
@@ -192,10 +191,18 @@ const fetchMedia = async () => {
   loading.value = true;
   mediaList.value = [];
   try {
-    const dialog = dialogs.value.find(
-      (d) => d.id?.toString() === selectedChannel.value,
-    );
-    mediaList.value = await getMediaList(dialog.entity, { limit: 100 });
+    const result = await $fetch("/api/tg/media/list", {
+      method: "POST",
+      body: {
+        ...getCreds(),
+        session: getSession(),
+        channelId: selectedChannel.value,
+      },
+    });
+    mediaList.value = result.items.map((m) => ({
+      ...m,
+      date: new Date(m.date),
+    }));
     if (!mediaList.value.length) $toast.info(t("gramkit.media.noMedia"));
   } catch {
     $toast.error(t("gramkit.toast.error"));
@@ -207,9 +214,20 @@ const fetchMedia = async () => {
 const downloadItem = async (item) => {
   downloading.value[item.id] = true;
   try {
-    const buffer = await downloadMedia(item.msg);
-    if (!buffer) throw new Error("empty");
-    const blob = new Blob([buffer]);
+    const result = await $fetch("/api/tg/media/download", {
+      method: "POST",
+      body: {
+        ...getCreds(),
+        session: getSession(),
+        channelId: selectedChannel.value,
+        msgId: item.id,
+      },
+    });
+    // result.data is base64
+    const binary = atob(result.data);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes]);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -230,7 +248,6 @@ const formatSize = (bytes) => {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
-
 </script>
 
 <style scoped lang="scss">

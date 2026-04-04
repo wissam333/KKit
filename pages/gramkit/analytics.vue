@@ -124,11 +124,9 @@
 </template>
 
 <script setup>
-import { useTelegram } from "~/composables/useTelegram";
-
 const { locale, t } = useI18n();
 const { $toast } = useNuxtApp();
-const { isConnected, getDialogs, analyzeChannel } = useTelegram();
+const { isConnected, getSession, getCreds } = useTelegram();
 
 const selectedChannel = ref(null);
 const loadingDialogs = ref(false);
@@ -188,7 +186,10 @@ onMounted(async () => {
   if (!isConnected.value) return;
   loadingDialogs.value = true;
   try {
-    dialogs.value = await getDialogs();
+    dialogs.value = await $fetch("/api/tg/dialogs", {
+      method: "POST",
+      body: { ...getCreds(), session: getSession() },
+    });
   } catch {
     $toast.error(t("gramkit.toast.error"));
   } finally {
@@ -201,18 +202,20 @@ const runAnalysis = async () => {
   analyzing.value = true;
   result.value = null;
   try {
-    const dialog = dialogs.value.find(
-      (d) => d.id?.toString() === selectedChannel.value,
-    );
-    if (!dialog) throw new Error("channel not found");
-    result.value = await analyzeChannel(dialog.entity, { limit: 200 });
+    result.value = await $fetch("/api/tg/analyzeChannel", {
+      method: "POST",
+      body: {
+        ...getCreds(),
+        session: getSession(),
+        channelId: selectedChannel.value,
+      },
+    });
   } catch {
     $toast.error(t("gramkit.toast.error"));
   } finally {
     analyzing.value = false;
   }
 };
-
 </script>
 
 <style scoped lang="scss">

@@ -307,11 +307,9 @@
 </template>
 
 <script setup>
-import { useTelegram } from "~/composables/useTelegram";
-
 const { locale, t } = useI18n();
 const { $toast } = useNuxtApp();
-const { isConnected, client } = useTelegram();
+const { isConnected, getSession, getCreds } = useTelegram();
 
 const loading = ref(false);
 const progress = ref(0);
@@ -325,7 +323,6 @@ const periods = computed(() => [
   { value: 90, label: t("gramkit.wrapped.period90") },
   { value: 365, label: t("gramkit.wrapped.period365") },
 ]);
-
 const periodLabel = computed(
   () => periods.value.find((p) => p.value === period.value)?.label ?? "",
 );
@@ -344,57 +341,6 @@ const barH = (count, arr) => {
 };
 const wordSize = (i) => Math.max(0.75, 1.4 - i * 0.06);
 const wordOpacity = (i) => Math.max(0.5, 1 - i * 0.04);
-
-const stopwords = new Set([
-  "في",
-  "من",
-  "إلى",
-  "على",
-  "مع",
-  "هذا",
-  "هذه",
-  "التي",
-  "الذي",
-  "وقد",
-  "كان",
-  "عن",
-  "قال",
-  "كل",
-  "هو",
-  "هي",
-  "the",
-  "a",
-  "an",
-  "is",
-  "in",
-  "of",
-  "to",
-  "and",
-  "for",
-  "on",
-  "at",
-  "by",
-  "or",
-  "it",
-  "that",
-  "this",
-  "was",
-  "are",
-  "have",
-  "has",
-  "been",
-  "will",
-  "with",
-  "you",
-  "me",
-  "my",
-  "we",
-  "our",
-  "i",
-  "he",
-  "she",
-  "they",
-]);
 
 const getPersonality = (data) => {
   if (data.peakHour >= 22 || data.peakHour < 4)
@@ -438,153 +384,39 @@ const generate = async () => {
   loading.value = true;
   progress.value = 0;
   result.value = null;
-
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - period.value);
-  cutoff.setHours(0, 0, 0, 0);
-
-  const data = {
-    myName: "",
-    myId: null,
-    totalSent: 0,
-    totalReceived: 0,
-    mediaSent: 0,
-    activeDays: new Set(),
-    channelsRead: 0,
-    byHour: Array(24).fill(0),
-    contactMap: {},
-    wordCount: {},
-    dayMap: {},
-    peakHour: 0,
-  };
-
-  let msgIdx = 0;
-
+  loadingMsg.value = loadingMsgs.value[0];
   try {
-    // Get my info
-    loadingMsg.value = loadingMsgs.value[0];
-    const me = await client.value.getMe();
-    data.myId = me.id?.toString();
-    data.myName =
-      [me.firstName, me.lastName].filter(Boolean).join(" ") ||
-      me.username ||
-      "You";
-    progress.value = 10;
-
-    // Get all dialogs
-    loadingMsg.value = loadingMsgs.value[1];
-    const dialogs = await client.value.getDialogs({ limit: 200 });
-    progress.value = 20;
-
-    const privateDialogs = dialogs.filter((d) => !d.isChannel && !d.isGroup);
-    const channelDialogs = dialogs.filter((d) => d.isChannel || d.isGroup);
-    data.channelsRead = channelDialogs.length;
-
-    const total = privateDialogs.length;
-    let done = 0;
-
-    // Scan private chats for sent/received
-    loadingMsg.value = loadingMsgs.value[2];
-    for (const dialog of privateDialogs) {
-      try {
-        const msgs = await client.value.getMessages(dialog.entity, {
-          limit: 100,
-        });
-        const peer = dialog.title || dialog.name || "Unknown";
-
-        for (const msg of msgs) {
-          if (!msg.message && !msg.media) continue;
-          const msgDate = new Date(msg.date * 1000);
-          if (msgDate < cutoff) continue;
-
-          const h = msgDate.getHours();
-          const dayKey = msgDate.toLocaleDateString("en-GB");
-
-          data.byHour[h]++;
-          data.activeDays.add(dayKey);
-          data.dayMap[dayKey] = (data.dayMap[dayKey] ?? 0) + 1;
-
-          const isMe = msg.out === true;
-          if (isMe) {
-            data.totalSent++;
-            if (msg.media) data.mediaSent++;
-            // word count from my messages
-            if (msg.message) {
-              msg.message
-                .toLowerCase()
-                .replace(/[^\u0600-\u06FFa-z\s]/g, " ")
-                .split(/\s+/)
-                .filter((w) => w.length > 3 && !stopwords.has(w))
-                .forEach((w) => {
-                  data.wordCount[w] = (data.wordCount[w] ?? 0) + 1;
-                });
-            }
-          } else {
-            data.totalReceived++;
-            if (!data.contactMap[peer]) data.contactMap[peer] = 0;
-            data.contactMap[peer]++;
-          }
-        }
-      } catch {
-        /* skip */
-      }
-      done++;
-      progress.value = 20 + Math.round((done / total) * 65);
-      await new Promise((r) => setTimeout(r, 300));
-    }
-
-    // Compile results
-    loadingMsg.value = loadingMsgs.value[3];
-    progress.value = 90;
-
-    const peakHour = data.byHour.indexOf(Math.max(...data.byHour));
-
-    const topContacts = Object.entries(data.contactMap)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([name, count]) => ({ name, count }));
-
-    const topWords = Object.entries(data.wordCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 20)
-      .map(([word, count]) => ({ word, count }));
-
-    const mostActiveDayEntry = Object.entries(data.dayMap).sort(
-      (a, b) => b[1] - a[1],
-    )[0];
-    const mostActiveDay = mostActiveDayEntry
-      ? { date: mostActiveDayEntry[0], count: mostActiveDayEntry[1] }
-      : null;
-
-    const finalData = {
-      myName: data.myName,
-      totalSent: data.totalSent,
-      totalReceived: data.totalReceived,
-      mediaSent: data.mediaSent,
-      activeDays: data.activeDays.size,
-      channelsRead: data.channelsRead,
-      byHour: data.byHour,
-      peakHour,
-      topContacts,
-      topWords,
-      mostActiveDay,
-      avgPerDay:
-        data.activeDays.size > 0
-          ? Math.round(data.totalSent / data.activeDays.size)
-          : 0,
-    };
-
-    finalData.personality = getPersonality(finalData);
+    // Poll progress via a single long request — server does all the work
+    const data = await $fetch("/api/tg/wrapped/generate", {
+      method: "POST",
+      body: {
+        ...getCreds(),
+        session: getSession(),
+        period: period.value,
+        locale: locale.value,
+      },
+      timeout: 120000,
+      onRequest() {
+        progress.value = 5;
+        loadingMsg.value = loadingMsgs.value[1];
+      },
+      onResponse() {
+        progress.value = 95;
+        loadingMsg.value = loadingMsgs.value[3];
+      },
+    });
+    data.personality = getPersonality(data);
     progress.value = 100;
-    await new Promise((r) => setTimeout(r, 400));
-    result.value = finalData;
+    await new Promise((r) => setTimeout(r, 300));
+    result.value = data;
   } catch (e) {
-    $toast.error(t("gramkit.toast.error") + ": " + e.message);
+    $toast.error(
+      t("gramkit.toast.error") + ": " + (e.data?.message ?? e.message),
+    );
   } finally {
     loading.value = false;
   }
 };
-
 </script>
 
 <style scoped lang="scss">

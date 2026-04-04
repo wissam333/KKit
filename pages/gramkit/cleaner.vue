@@ -118,12 +118,9 @@
 </template>
 
 <script setup>
-import { useTelegram } from "~/composables/useTelegram";
-
 const { locale, t } = useI18n();
 const { $toast } = useNuxtApp();
-const { isConnected, getDialogs, getMessages, deleteMyMessages } =
-  useTelegram();
+const { isConnected, getSession, getCreds } = useTelegram();
 
 const selectedChannel = ref(null);
 const loadingDialogs = ref(false);
@@ -145,7 +142,10 @@ onMounted(async () => {
   if (!isConnected.value) return;
   loadingDialogs.value = true;
   try {
-    dialogs.value = await getDialogs();
+    dialogs.value = await $fetch("/api/tg/dialogs", {
+      method: "POST",
+      body: { ...getCreds(), session: getSession() },
+    });
   } finally {
     loadingDialogs.value = false;
   }
@@ -155,12 +155,15 @@ const previewMessages = async () => {
   scanning.value = true;
   myMessages.value = [];
   try {
-    const dialog = dialogs.value.find(
-      (d) => d.id?.toString() === selectedChannel.value,
-    );
-    const msgs = await getMessages(dialog.entity, { limit: 100 });
-    // We show all messages — actual deletion only removes user's own
-    myMessages.value = msgs.filter((m) => m.message);
+    const result = await $fetch("/api/tg/cleaner/preview", {
+      method: "POST",
+      body: {
+        ...getCreds(),
+        session: getSession(),
+        channelId: selectedChannel.value,
+      },
+    });
+    myMessages.value = result.messages;
     if (!myMessages.value.length) $toast.info(t("gramkit.cleaner.noMsgs"));
   } catch {
     $toast.error(t("gramkit.toast.error"));
@@ -177,10 +180,14 @@ const doDelete = async () => {
   showConfirm.value = false;
   deleting.value = true;
   try {
-    const dialog = dialogs.value.find(
-      (d) => d.id?.toString() === selectedChannel.value,
-    );
-    const { deleted } = await deleteMyMessages(dialog.entity);
+    const { deleted } = await $fetch("/api/tg/cleaner/delete", {
+      method: "POST",
+      body: {
+        ...getCreds(),
+        session: getSession(),
+        channelId: selectedChannel.value,
+      },
+    });
     $toast.success(
       `${t("gramkit.cleaner.deleted")} ${deleted} ${t("gramkit.cleaner.messages")}`,
     );
@@ -198,7 +205,6 @@ const formatDate = (ts) =>
   new Date(ts * 1000).toLocaleDateString(
     locale.value === "ar" ? "ar-EG" : "en-GB",
   );
-
 </script>
 
 <style scoped lang="scss">

@@ -279,13 +279,10 @@
 </template>
 
 <script setup>
-import { useTelegram } from "~/composables/useTelegram";
-
 const { locale, t } = useI18n();
 const { $toast } = useNuxtApp();
-const { isConnected, client } = useTelegram();
+const { isConnected, getSession, getCreds } = useTelegram();
 
-// ── State ──
 const loading = ref(false);
 const loadPct = ref(0);
 const messages = ref([]);
@@ -294,15 +291,12 @@ const typeFilter = ref("all");
 const selectedTags = ref([]);
 const expanded = ref({});
 
-// ── Local data (tags + notes) stored in localStorage ──
 const LOCAL_KEY = "gk_saves_meta";
 const localData = ref(JSON.parse(localStorage.getItem(LOCAL_KEY) ?? "{}"));
-
 const getLocalData = (id) => localData.value[id] ?? { tags: [], note: "" };
 const saveLocal = () =>
   localStorage.setItem(LOCAL_KEY, JSON.stringify(localData.value));
 
-// ── Tag modal ──
 const showTagModal = ref(false);
 const editingMsgId = ref(null);
 const editingTags = ref([]);
@@ -368,7 +362,6 @@ const allTags = computed(() => {
   return [...tags];
 });
 
-// ── Type filters ──
 const typeFilters = computed(() => [
   { v: "all", label: t("gramkit.saves.all"), icon: "mdi:all-inclusive" },
   { v: "text", label: t("gramkit.saves.text"), icon: "mdi:text" },
@@ -377,10 +370,8 @@ const typeFilters = computed(() => [
   { v: "tagged", label: t("gramkit.saves.tagged"), icon: "mdi:tag-outline" },
 ]);
 
-// ── Filtered messages ──
 const filtered = computed(() => {
   let res = messages.value;
-
   if (typeFilter.value === "text")
     res = res.filter((m) => m.text && !m.hasMedia);
   if (typeFilter.value === "media") res = res.filter((m) => m.hasMedia);
@@ -388,17 +379,14 @@ const filtered = computed(() => {
     res = res.filter((m) => m.text && /https?:\/\//i.test(m.text));
   if (typeFilter.value === "tagged")
     res = res.filter((m) => getLocalData(m.id).tags.length > 0);
-
   if (selectedTags.value.length)
     res = res.filter((m) =>
       selectedTags.value.every((tag) => getLocalData(m.id).tags.includes(tag)),
     );
-
   if (search.value.trim())
     res = res.filter((m) =>
       m.text?.toLowerCase().includes(search.value.toLowerCase()),
     );
-
   return res;
 });
 
@@ -433,38 +421,22 @@ const statCards = computed(() => [
   },
 ]);
 
-// ── Load saved messages ──
 const loadSaved = async () => {
   loading.value = true;
   loadPct.value = 0;
   messages.value = [];
   try {
-    // "me" entity fetches Saved Messages
-    const me = await client.value.getMe();
-    const msgs = await client.value.getMessages("me", { limit: 200 });
-    const total = msgs.length;
-    messages.value = msgs
-      .filter((m) => m.message || m.media)
-      .map((m, i) => {
-        loadPct.value = Math.round((i / total) * 100);
-        return {
-          id: m.id.toString(),
-          text: m.message ?? "",
-          date: m.date,
-          hasMedia: !!m.media,
-          mediaType: m.photo
-            ? "photo"
-            : m.document
-              ? "document"
-              : m.media
-                ? "media"
-                : null,
-        };
-      });
+    const result = await $fetch("/api/tg/saves/list", {
+      method: "POST",
+      body: { ...getCreds(), session: getSession() },
+    });
+    messages.value = result.messages;
     loadPct.value = 100;
     $toast.success(`${messages.value.length} ${t("gramkit.saves.loaded")}`);
   } catch (e) {
-    $toast.error(t("gramkit.toast.error") + ": " + e.message);
+    $toast.error(
+      t("gramkit.toast.error") + ": " + (e.data?.message ?? e.message),
+    );
   } finally {
     loading.value = false;
   }
@@ -472,8 +444,9 @@ const loadSaved = async () => {
 
 const deleteMsg = async (msg) => {
   try {
-    await client.value.deleteMessages("me", [parseInt(msg.id)], {
-      revoke: true,
+    await $fetch("/api/tg/saves/delete", {
+      method: "POST",
+      body: { ...getCreds(), session: getSession(), msgId: parseInt(msg.id) },
     });
     messages.value = messages.value.filter((m) => m.id !== msg.id);
     $toast.success(t("gramkit.saves.deleted"));
@@ -495,8 +468,7 @@ const exportAll = () => {
       ? `[${d.tags.map((t) => "#" + t).join(" ")}]`
       : "";
     const note = d.note ? `Note: ${d.note}` : "";
-    const date = formatDate(m.date);
-    return `--- ${date} ${tags}\n${m.text ?? "[media]"}\n${note}\n`;
+    return `--- ${formatDate(m.date)} ${tags}\n${m.text ?? "[media]"}\n${note}\n`;
   });
   const blob = new Blob([lines.join("\n")], {
     type: "text/plain;charset=utf-8;",
@@ -527,7 +499,6 @@ const formatDate = (ts) =>
       minute: "2-digit",
     },
   );
-
 </script>
 
 <style scoped lang="scss">

@@ -288,11 +288,9 @@
 </template>
 
 <script setup>
-import { useTelegram } from "~/composables/useTelegram";
-
 const { locale, t } = useI18n();
 const { $toast } = useNuxtApp();
-const { isConnected, client } = useTelegram();
+const { isConnected, getSession, getCreds } = useTelegram();
 
 const activeTab = ref("scan");
 const tabs = computed(() => [
@@ -304,7 +302,6 @@ const tabs = computed(() => [
   },
 ]);
 
-// ── Rules ──
 const rules = reactive({
   inactiveDays: 30,
   includeChannels: true,
@@ -323,7 +320,6 @@ const removeSkipKw = (kw) => {
   rules.skipIfContains = rules.skipIfContains.filter((k) => k !== kw);
 };
 
-// ── Scan state ──
 const scanning = ref(false);
 const scanPct = ref(0);
 const scanMsg = ref("");
@@ -335,77 +331,25 @@ const history = ref(
   JSON.parse(localStorage.getItem("gk_archive_history") ?? "[]"),
 );
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
 const runScan = async () => {
   scanning.value = true;
   scanPct.value = 0;
   candidates.value = [];
   selected.value = [];
-
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - rules.inactiveDays);
-
   try {
     scanMsg.value = t("gramkit.archiver.scanningDialogs");
-    const dialogs = await client.value.getDialogs({ limit: 300 });
-    const total = dialogs.length;
-
-    for (let i = 0; i < dialogs.length; i++) {
-      const d = dialogs[i];
-      scanPct.value = Math.round((i / total) * 100);
-      scanMsg.value = d.title ?? "";
-
-      // Type filter
-      if (d.isChannel && !d.isGroup && !rules.includeChannels) continue;
-      if (d.isGroup && !rules.includeGroups) continue;
-      if (!d.isChannel && !d.isGroup && !rules.includePrivate) continue;
-
-      // Skip if keyword in title
-      const titleLower = (d.title ?? "").toLowerCase();
-      if (
-        rules.skipIfContains.some((kw) => titleLower.includes(kw.toLowerCase()))
-      )
-        continue;
-
-      // Check last message date
-      const lastMsgDate = d.date ? new Date(d.date * 1000) : null;
-      if (!lastMsgDate || lastMsgDate >= cutoff) continue;
-
-      // Check if already archived
-      if (d.archived) continue;
-
-      // Unread count check as proxy for engagement
-      const msgCount = d.unreadCount ?? null;
-      if (
-        rules.minMessages > 0 &&
-        msgCount !== null &&
-        msgCount >= rules.minMessages
-      )
-        continue;
-
-      const daysSince = Math.floor(
-        (Date.now() - lastMsgDate.getTime()) / 86400000,
-      );
-
-      candidates.value.push({
-        id: d.id?.toString(),
-        title: d.title ?? d.name ?? "Unknown",
-        type:
-          d.isChannel && !d.isGroup
-            ? "channel"
-            : d.isGroup
-              ? "group"
-              : "private",
-        lastMsgDate,
-        lastMsgLabel: `${daysSince}d ago`,
-        msgCount,
-        entity: d.entity,
-      });
-
-      await sleep(50);
-    }
-
+    const result = await $fetch("/api/tg/archiver/scan", {
+      method: "POST",
+      body: {
+        ...getCreds(),
+        session: getSession(),
+        rules: { ...rules },
+      },
+      onResponse({ response }) {
+        // stream progress if needed
+      },
+    });
+    candidates.value = result.candidates;
     scanPct.value = 100;
     if (!candidates.value.length)
       $toast.info(t("gramkit.archiver.noCandidates"));
@@ -414,7 +358,9 @@ const runScan = async () => {
         `${candidates.value.length} ${t("gramkit.archiver.candidatesFound")}`,
       );
   } catch (e) {
-    $toast.error(t("gramkit.toast.error") + ": " + e.message);
+    $toast.error(
+      t("gramkit.toast.error") + ": " + (e.data?.message ?? e.message),
+    );
   } finally {
     scanning.value = false;
   }
@@ -439,45 +385,27 @@ const confirmArchive = () => {
 const doArchive = async () => {
   showConfirm.value = false;
   archiving.value = true;
-  let done = 0;
-  const toArchive = candidates.value.filter((c) =>
-    selected.value.includes(c.id),
-  );
-
   try {
-    for (const c of toArchive) {
-      try {
-        // toggleDialogPin with archived flag — archives the dialog
-        await client.value.invoke({
-          _: "toggleDialogPin",
-          peer: await client.value.getInputEntity(c.entity),
-          pinned: false,
-        });
-        // Actually archive using the folderId approach
-        await client.value.invoke({
-          _: "foldersEditPeerFolders",
-          folder_peers: [
-            {
-              _: "inputFolderPeer",
-              peer: await client.value.getInputEntity(c.entity),
-              folder_id: 1, // 1 = archived folder
-            },
-          ],
-        });
-        history.value.unshift({
-          id: `${c.id}_${Date.now()}`,
-          title: c.title,
-          archivedAt: new Date().toLocaleDateString(
-            locale.value === "ar" ? "ar-EG" : "en-GB",
-          ),
-        });
-        done++;
-      } catch {
-        /* skip individual failures */
-      }
-      await sleep(300);
-    }
-
+    const { done } = await $fetch("/api/tg/archiver/archive", {
+      method: "POST",
+      body: {
+        ...getCreds(),
+        session: getSession(),
+        ids: selected.value,
+      },
+    });
+    const archived = candidates.value.filter((c) =>
+      selected.value.includes(c.id),
+    );
+    archived.forEach((c) => {
+      history.value.unshift({
+        id: `${c.id}_${Date.now()}`,
+        title: c.title,
+        archivedAt: new Date().toLocaleDateString(
+          locale.value === "ar" ? "ar-EG" : "en-GB",
+        ),
+      });
+    });
     localStorage.setItem(
       "gk_archive_history",
       JSON.stringify(history.value.slice(0, 200)),
@@ -495,7 +423,6 @@ const doArchive = async () => {
     archiving.value = false;
   }
 };
-
 </script>
 
 <style scoped lang="scss">

@@ -1,270 +1,73 @@
-// composables/useTelegram.js
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const SAFE_DELAY = 500;
-
-// Lazy singleton – avoids re-importing CJS module in ESM context
-let _TelegramClient = null;
-let _StringSession = null;
-
-const getTelegramModules = async () => {
-  if (!_TelegramClient) {
-    const tg = await import("telegram");
-    const sess = await import("telegram/sessions");
-    _TelegramClient = tg.TelegramClient;
-    _StringSession = sess.StringSession;
-  }
-  return { TelegramClient: _TelegramClient, StringSession: _StringSession };
-};
-
-export const useTgClient = () => useState("tg_client", () => null);
 export const useTgConnected = () => useState("tg_connected", () => false);
-// Store the temp auth client + hash so they survive component re-renders
+export const useTgSession = () => useState("tg_session", () => "");
 export const useTgPending = () =>
-  useState("tg_pending", () => ({ client: null, codeHash: "" }));
+  useState("tg_pending", () => ({ session: "", codeHash: "" }));
+export const useTgCreds = () =>
+  useState("tg_creds", () => ({ apiId: "", apiHash: "" }));
 
 export const useTelegram = () => {
-  const client = useTgClient();
   const isConnected = useTgConnected();
+  const tgSession = useTgSession();
   const pending = useTgPending();
+  const creds = useTgCreds();
 
-  /* ── Restore or create a connected client ─────────────────── */
-  const connect = async ({ apiId, apiHash, session = "" }) => {
-    const { TelegramClient, StringSession } = await getTelegramModules();
-    client.value = new TelegramClient(
-      new StringSession(session),
-      parseInt(apiId),
-      apiHash,
-      { connectionRetries: 5 },
-    );
-    await client.value.connect();
+  const post = (url, body) => $fetch(url, { method: "POST", body });
+
+  /* ── Step 0: restore session from localStorage ───────────── */
+  const restoreSession = async ({ apiId, apiHash, session }) => {
+    await post("/api/tg/connect", { apiId, apiHash, session });
+    creds.value = { apiId, apiHash };
+    tgSession.value = session;
     isConnected.value = true;
-    return client.value;
   };
 
-  /* ── Step 1: send the OTP and cache hash + temp client ───── */
+  /* ── Step 1: send OTP ────────────────────────────────────── */
   const sendCode = async ({ apiId, apiHash, phone }) => {
-    const { TelegramClient } = await import("telegram");
-    const { StringSession } = await import("telegram/sessions");
-    const tmp = new TelegramClient(
-      new StringSession(""),
-      parseInt(apiId),
-      apiHash,
-      { connectionRetries: 5 },
-    );
-    await tmp.connect();
-    const { phoneCodeHash } = await tmp.sendCode(
-      { apiId: parseInt(apiId), apiHash },
+    const res = await post("/api/tg/sendCode", { apiId, apiHash, phone });
+    creds.value = { apiId, apiHash };
+    pending.value = { session: res.session, codeHash: res.phoneCodeHash };
+  };
+
+  /* ── Step 2: verify OTP ──────────────────────────────────── */
+  const signIn = async ({ phone, code }) => {
+    const res = await post("/api/tg/signIn", {
+      apiId: creds.value.apiId,
+      apiHash: creds.value.apiHash,
       phone,
-    );
-    // Persist temp client and hash across renders
-    pending.value = { client: tmp, codeHash: phoneCodeHash };
-    return phoneCodeHash;
-  };
-
-  /* ── Step 2: verify OTP and promote temp client ──────────── */
-  const signIn = async ({ apiId, apiHash, phone, code }) => {
-    const tmp = pending.value.client;
-    const codeHash = pending.value.codeHash;
-    if (!tmp || !codeHash) throw new Error("No pending auth session");
-
-    await tmp.signInUser(
-      { apiId: parseInt(apiId), apiHash },
-      {
-        phoneNumber: phone,
-        phoneCode: async () => code,
-        phoneCodeHash: codeHash, // ← this is the critical fix
-        onError: (e) => {
-          throw e;
-        },
-      },
-    );
-
-    // Promote signed-in temp client to active client
-    client.value = tmp;
+      code,
+      phoneCodeHash: pending.value.codeHash,
+      session: pending.value.session,
+    });
+    tgSession.value = res.session;
     isConnected.value = true;
-    pending.value = { client: null, codeHash: "" };
-    return tmp.session.save();
+    pending.value = { session: "", codeHash: "" };
+    return res.session;
   };
-
-  const getSession = () => client.value?.session?.save() ?? "";
 
   const disconnect = () => {
-    try {
-      client.value?.disconnect?.();
-    } catch {}
-    try {
-      pending.value.client?.disconnect?.();
-    } catch {}
-    client.value = null;
+    tgSession.value = "";
     isConnected.value = false;
-    pending.value = { client: null, codeHash: "" };
+    pending.value = { session: "", codeHash: "" };
+    creds.value = { apiId: "", apiHash: "" };
   };
 
-  const getDialogs = async ({ limit = 300 } = {}) => {
-    if (!client.value) return [];
-    const dialogs = await client.value.getDialogs({ limit });
-    return dialogs.filter((d) => d.isChannel || d.isGroup);
-  };
+  const getSession = () => tgSession.value;
+  const getCreds = () => creds.value;
 
-  const getMessages = async (entity, { limit = 100 } = {}) => {
-    if (!client.value) return [];
-    return await client.value.getMessages(entity, { limit });
-  };
-
-  const scanAllChannels = async ({
-    limit = 100,
-    cutoffDate,
-    onEachMessage,
-    onProgress,
-  } = {}) => {
-    if (!client.value) return;
-    const dialogs = await getDialogs({ limit: 300 });
-    for (let i = 0; i < dialogs.length; i++) {
-      const ch = dialogs[i];
-      try {
-        const msgs = await client.value.getMessages(ch.entity, { limit });
-        for (const msg of msgs) {
-          if (!msg.message) continue;
-          if (cutoffDate && new Date(msg.date * 1000) < cutoffDate) continue;
-          onEachMessage?.(msg, ch);
-        }
-      } catch {}
-      onProgress?.(i + 1, dialogs.length);
-      await sleep(SAFE_DELAY);
-    }
-  };
-
-  const deleteMyMessages = async (entity, { onProgress } = {}) => {
-    if (!client.value) return { deleted: 0 };
-    const me = await client.value.getMe();
-    const msgs = await client.value.getMessages(entity, {
-      limit: 100,
-      fromUser: me,
+  const getDialogs = () =>
+    post("/api/tg/dialogs", {
+      ...creds.value,
+      session: tgSession.value,
     });
-    const ids = msgs.map((m) => m.id);
-    if (!ids.length) return { deleted: 0 };
-    await client.value.deleteMessages(entity, ids, { revoke: true });
-    onProgress?.(ids.length);
-    return { deleted: ids.length };
-  };
-
-  const getMembers = async (entity, { limit = 200 } = {}) => {
-    if (!client.value) return [];
-    try {
-      const participants = await client.value.getParticipants(entity, {
-        limit,
-      });
-      return participants.map((p) => ({
-        id: p.id?.toString(),
-        firstName: p.firstName ?? "",
-        lastName: p.lastName ?? "",
-        username: p.username ?? "",
-        phone: p.phone ?? "",
-        isBot: p.bot ?? false,
-      }));
-    } catch {
-      return [];
-    }
-  };
-
-  const analyzeChannel = async (entity, { limit = 200 } = {}) => {
-    if (!client.value) return null;
-    const msgs = await client.value.getMessages(entity, { limit });
-    const byHour = Array(24).fill(0);
-    const wordCount = {};
-    const stopwords = new Set([
-      "في",
-      "من",
-      "إلى",
-      "على",
-      "مع",
-      "هذا",
-      "هذه",
-      "التي",
-      "الذي",
-      "وقد",
-      "كان",
-      "عن",
-      "the",
-      "a",
-      "an",
-      "is",
-      "in",
-      "of",
-      "to",
-      "and",
-      "for",
-      "on",
-      "at",
-      "by",
-      "or",
-      "it",
-      "that",
-      "this",
-    ]);
-    for (const msg of msgs) {
-      if (!msg.message) continue;
-      const d = new Date(msg.date * 1000);
-      byHour[d.getHours()]++;
-      msg.message
-        .toLowerCase()
-        .replace(/[^\u0600-\u06FFa-z\s]/g, " ")
-        .split(/\s+/)
-        .filter((w) => w.length > 3 && !stopwords.has(w))
-        .forEach((w) => {
-          wordCount[w] = (wordCount[w] ?? 0) + 1;
-        });
-    }
-    const topWords = Object.entries(wordCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 15)
-      .map(([word, count]) => ({ word, count }));
-    return {
-      totalMessages: msgs.length,
-      byHour,
-      topWords,
-      peakHour: byHour.indexOf(Math.max(...byHour)),
-    };
-  };
-
-  const getMediaList = async (entity, { limit = 50 } = {}) => {
-    if (!client.value) return [];
-    const msgs = await client.value.getMessages(entity, { limit });
-    return msgs
-      .filter((m) => m.media)
-      .map((m) => ({
-        id: m.id,
-        date: new Date(m.date * 1000),
-        type: m.photo ? "photo" : m.document ? "document" : "other",
-        fileName:
-          m.document?.attributes?.find((a) => a.fileName)?.fileName ??
-          `file_${m.id}`,
-        size: m.document?.size ?? null,
-        msg: m,
-      }));
-  };
-
-  const downloadMedia = async (msg) => {
-    if (!client.value) return null;
-    return await client.value.downloadMedia(msg, { workers: 1 });
-  };
 
   return {
-    client,
     isConnected,
-    connect,
+    restoreSession,
     sendCode,
     signIn,
-    getSession,
     disconnect,
+    getSession,
+    getCreds,
     getDialogs,
-    getMessages,
-    scanAllChannels,
-    deleteMyMessages,
-    getMembers,
-    analyzeChannel,
-    getMediaList,
-    downloadMedia,
   };
 };
