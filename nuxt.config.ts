@@ -32,6 +32,7 @@ export default defineNuxtConfig({
       display: "standalone",
       orientation: "portrait-primary",
       start_url: "/toolbox/rooms",
+      scope: "/toolbox/",
       icons: [
         {
           src: "/pwa-192.png",

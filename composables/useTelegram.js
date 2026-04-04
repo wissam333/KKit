@@ -5,21 +5,69 @@ const SAFE_DELAY = 500;
 
 export const useTgClient = () => useState("tg_client", () => null);
 export const useTgConnected = () => useState("tg_connected", () => false);
+// Store the temp auth client + hash so they survive component re-renders
+export const useTgPending = () =>
+  useState("tg_pending", () => ({ client: null, codeHash: "" }));
 
 export const useTelegram = () => {
   const client = useTgClient();
   const isConnected = useTgConnected();
+  const pending = useTgPending();
 
+  /* ── Restore or create a connected client ─────────────────── */
   const connect = async ({ apiId, apiHash, session = "" }) => {
     const { TelegramClient } = await import("telegram");
     const { StringSession } = await import("telegram/sessions");
-    const stringSession = new StringSession(session);
-    client.value = new TelegramClient(stringSession, parseInt(apiId), apiHash, {
-      connectionRetries: 5,
-    });
+    client.value = new TelegramClient(
+      new StringSession(session),
+      parseInt(apiId),
+      apiHash,
+      { connectionRetries: 5 },
+    );
     await client.value.connect();
     isConnected.value = true;
     return client.value;
+  };
+
+  /* ── Step 1: send the OTP and cache hash + temp client ───── */
+  const sendCode = async ({ apiId, apiHash, phone }) => {
+    const { TelegramClient } = await import("telegram");
+    const { StringSession } = await import("telegram/sessions");
+    const tmp = new TelegramClient(
+      new StringSession(""),
+      parseInt(apiId),
+      apiHash,
+      { connectionRetries: 5 },
+    );
+    await tmp.connect();
+    const { phoneCodeHash } = await tmp.sendCode(
+      { apiId: parseInt(apiId), apiHash },
+      phone,
+    );
+    // Persist temp client and hash across renders
+    pending.value = { client: tmp, codeHash: phoneCodeHash };
+    return phoneCodeHash;
+  };
+
+  /* ── Step 2: verify OTP and promote temp client ──────────── */
+  const signIn = async ({ apiId, apiHash, phone, code }) => {
+    const tmp = pending.value.client;
+    const codeHash = pending.value.codeHash;
+    if (!tmp || !codeHash) throw new Error("No pending auth session");
+
+    await tmp.invoke(
+      new (await import("telegram/tl")).Api.auth.SignIn({
+        phoneNumber: phone,
+        phoneCodeHash: codeHash,
+        phoneCode: code,
+      }),
+    );
+
+    // Promote the signed-in client to the active client
+    client.value = tmp;
+    isConnected.value = true;
+    pending.value = { client: null, codeHash: "" };
+    return tmp.session.save();
   };
 
   const getSession = () => client.value?.session?.save() ?? "";
@@ -28,8 +76,12 @@ export const useTelegram = () => {
     try {
       client.value?.disconnect?.();
     } catch {}
+    try {
+      pending.value.client?.disconnect?.();
+    } catch {}
     client.value = null;
     isConnected.value = false;
+    pending.value = { client: null, codeHash: "" };
   };
 
   const getDialogs = async ({ limit = 300 } = {}) => {
@@ -185,6 +237,8 @@ export const useTelegram = () => {
     client,
     isConnected,
     connect,
+    sendCode,
+    signIn,
     getSession,
     disconnect,
     getDialogs,

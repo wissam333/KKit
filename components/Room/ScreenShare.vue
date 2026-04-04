@@ -31,7 +31,10 @@
       </div>
 
       <!-- Local share preview -->
-      <div v-else-if="isSharingLocally && localStream" class="ss-local-view">
+      <div
+        v-else-if="isSharingLocally && localScreenStream"
+        class="ss-local-view"
+      >
         <video
           ref="localVideoEl"
           class="ss-video mirror-none"
@@ -74,7 +77,6 @@
     <!-- Bottom bar -->
     <div class="ss-footer">
       <div class="footer-left">
-        <!-- Who can share list -->
         <div class="sharing-members">
           <div
             v-for="m in allMembers"
@@ -126,7 +128,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 
 const props = defineProps({
   room: { type: Object, required: true },
@@ -139,10 +141,16 @@ const localVideoEl = ref(null);
 const remoteVideoEl = ref(null);
 const isSharingLocally = ref(false);
 const starting = ref(false);
-const remoteSharerId = ref(null); // peerId of who is sharing
+const remoteSharerId = ref(null);
 const remoteStream = ref(null);
-let localStream = null;
-let screenCall = null;
+
+// FIX: renamed from `localStream` to `localScreenStream` to avoid shadowing
+// props.room.localStream (the camera stream). This was silently stopping the
+// wrong stream on cleanup in some edge cases.
+let localScreenStream = null;
+
+// Keep a map of screen-share calls so we can close them cleanly
+const screenCalls = new Map(); // peerId -> MediaConnection
 
 const isMobile = computed(() => {
   if (!import.meta.client) return false;
@@ -165,53 +173,59 @@ const remoteSharerName = computed(() => {
   return m?.name || t("peer");
 });
 
-// ── Start screen share ────────────────────────────────────
+// ── Start screen share ────────────────────────────────────────────────────
 const startShare = async () => {
   if (starting.value) return;
   starting.value = true;
 
   try {
-    localStream = await props.room.getScreenStream();
-    if (!localStream) {
+    localScreenStream = await props.room.getScreenStream();
+    if (!localScreenStream) {
       starting.value = false;
       return;
     }
 
     isSharingLocally.value = true;
 
-    // Show preview
     await nextTick();
     if (localVideoEl.value) {
-      localVideoEl.value.srcObject = localStream;
+      localVideoEl.value.srcObject = localScreenStream;
       localVideoEl.value.play().catch(() => {});
     }
 
-    // Notify room via data channel
+    // Notify peers via data channel
     props.room.broadcast({
       type: "screen-share-start",
       peerId: props.room.myPeerId.value,
       name: props.room.myName.value,
     });
 
-    // Call all members with screen stream
+    // FIX: Use props.room.getPeer() but do NOT add another peer.on("call")
+    // listener here. All incoming calls are already routed through useRoom's
+    // messageHandlers as "incoming-call" events. We only call out from here.
     const peer = props.room.getPeer();
     for (const m of props.room.members.value) {
       try {
-        const call = peer.call(m.peerId, localStream, {
+        const call = peer.call(m.peerId, localScreenStream, {
           metadata: { type: "screen-share", name: props.room.myName.value },
         });
-        screenCall = call;
+        screenCalls.set(m.peerId, call);
         call.on("close", () => {
+          screenCalls.delete(m.peerId);
           if (isSharingLocally.value) stopShare();
+        });
+        call.on("error", () => {
+          screenCalls.delete(m.peerId);
         });
       } catch {}
     }
 
-    // Handle stream end (user pressed browser stop button)
-    localStream.getVideoTracks()[0].addEventListener("ended", () => {
+    // Auto-stop when the browser's native "Stop sharing" button is clicked
+    localScreenStream.getVideoTracks()[0]?.addEventListener("ended", () => {
       stopShare();
     });
   } catch (e) {
+    console.error("[ScreenShare] startShare error:", e);
     $toast?.error(t("screenShareFailed"));
   } finally {
     starting.value = false;
@@ -219,10 +233,17 @@ const startShare = async () => {
 };
 
 const stopShare = () => {
-  localStream?.getTracks().forEach((t) => t.stop());
-  localStream = null;
-  screenCall?.close();
-  screenCall = null;
+  localScreenStream?.getTracks().forEach((t) => t.stop());
+  localScreenStream = null;
+
+  // Close all outgoing screen-share calls
+  for (const [, call] of screenCalls) {
+    try {
+      call?.close();
+    } catch {}
+  }
+  screenCalls.clear();
+
   isSharingLocally.value = false;
 
   props.room.broadcast({
@@ -237,10 +258,20 @@ const goFullscreen = () => {
   remoteVideoEl.value?.requestFullscreen?.();
 };
 
-// ── Listen to room events ─────────────────────────────────
+// ── Attach remote stream to video element ─────────────────────────────────
+watch(remoteStream, (stream) => {
+  nextTick(() => {
+    if (remoteVideoEl.value && stream) {
+      remoteVideoEl.value.srcObject = stream;
+      remoteVideoEl.value.play().catch(() => {});
+    }
+  });
+});
+
+// ── Listen for room events ────────────────────────────────────────────────
 let unsubscribe;
 onMounted(() => {
-  unsubscribe = props.room.onMessage((data, fromPeerId) => {
+  unsubscribe = props.room.onMessage((data) => {
     if (data.type === "screen-share-start") {
       remoteSharerId.value = data.peerId;
     } else if (data.type === "screen-share-stop") {
@@ -250,56 +281,43 @@ onMounted(() => {
         if (remoteVideoEl.value) remoteVideoEl.value.srcObject = null;
       }
     } else if (data.type === "incoming-call") {
-      // Answer screen share calls automatically
-      if (data.metadata?.type === "screen-share") {
-        remoteSharerId.value = data.peerId;
-        props.room.getPeer().call(data.peerId, new MediaStream()).close();
-        data.call.answer(new MediaStream());
-        data.call.on("stream", (stream) => {
-          remoteStream.value = stream;
-          nextTick(() => {
-            if (remoteVideoEl.value) {
-              remoteVideoEl.value.srcObject = stream;
-              remoteVideoEl.value.play().catch(() => {});
-            }
-          });
-        });
-        data.call.on("close", () => {
-          remoteSharerId.value = null;
-          remoteStream.value = null;
-        });
-      }
-    } else if (data.type === "remote-stream") {
-      // Capture screen share streams (media calls)
-      // Screen share calls come from PeerJS call events
-    }
-  });
+      // FIX: Handle screen-share calls here instead of adding a duplicate
+      // peer.on("call") handler (which would fire twice and conflict with
+      // VideoGrid's handler). useRoom already emits all calls as "incoming-call".
+      if (data.metadata?.type !== "screen-share") return;
 
-  // Override peer's call handler to intercept screen share
-  const peer = props.room.getPeer();
-  if (peer) {
-    peer.on("call", (call) => {
-      if (call.metadata?.type === "screen-share") {
-        remoteSharerId.value = call.peer;
-        call.answer(new MediaStream());
-        call.on("stream", (stream) => {
-          remoteStream.value = stream;
-          nextTick(() => {
-            if (remoteVideoEl.value) {
-              remoteVideoEl.value.srcObject = stream;
-              remoteVideoEl.value.play().catch(() => {});
-            }
-          });
-        });
-        call.on("close", () => {
-          if (remoteSharerId.value === call.peer) {
-            remoteSharerId.value = null;
-            remoteStream.value = null;
+      const call = data.call;
+      remoteSharerId.value = data.peerId;
+
+      // Answer with an empty stream — we only want to *receive* the screen
+      call.answer(new MediaStream());
+
+      call.on("stream", (stream) => {
+        remoteStream.value = stream;
+        nextTick(() => {
+          if (remoteVideoEl.value) {
+            remoteVideoEl.value.srcObject = stream;
+            remoteVideoEl.value.play().catch(() => {});
           }
         });
-      }
-    });
-  }
+      });
+
+      call.on("close", () => {
+        if (remoteSharerId.value === call.peer) {
+          remoteSharerId.value = null;
+          remoteStream.value = null;
+          if (remoteVideoEl.value) remoteVideoEl.value.srcObject = null;
+        }
+      });
+
+      call.on("error", () => {
+        if (remoteSharerId.value === call.peer) {
+          remoteSharerId.value = null;
+          remoteStream.value = null;
+        }
+      });
+    }
+  });
 });
 
 onUnmounted(() => {
@@ -314,63 +332,57 @@ onUnmounted(() => {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  background: var(--bg-page);
 }
 
-/* ── Header ──────────────────────────────────────────────── */
 .ss-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: 12px 16px;
   border-bottom: 1.5px solid var(--border-color);
   background: var(--bg-surface);
   flex-shrink: 0;
-  gap: 10px;
-}
-
-.ss-header-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   font-size: 0.82rem;
   font-weight: 700;
   color: var(--text-primary);
-}
 
-.ss-header-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.live-badge {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 0.68rem;
-  font-weight: 800;
-  color: #22c55e;
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.2);
-  padding: 3px 9px;
-  border-radius: 20px;
-
-  &.purple {
-    color: #6366f1;
-    background: rgba(99, 102, 241, 0.1);
-    border-color: rgba(99, 102, 241, 0.2);
+  .ss-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
   }
 }
 
-.live-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #22c55e;
-  animation: livePulse 1.5s ease-in-out infinite;
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1.5px solid rgba(34, 197, 94, 0.25);
+  color: #22c55e;
+  font-size: 0.72rem;
+  font-weight: 700;
 
   &.purple {
-    background: #6366f1;
+    background: rgba(99, 102, 241, 0.1);
+    border-color: rgba(99, 102, 241, 0.25);
+    color: #6366f1;
+  }
+
+  .live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #22c55e;
+    animation: livePulse 1.5s ease-in-out infinite;
+
+    &.purple {
+      background: #6366f1;
+    }
   }
 }
 
@@ -380,26 +392,24 @@ onUnmounted(() => {
     opacity: 1;
   }
   50% {
-    opacity: 0.4;
+    opacity: 0.35;
   }
 }
 
-/* ── Main area ───────────────────────────────────────────── */
 .ss-main {
   flex: 1;
   overflow: hidden;
   position: relative;
-  background: #0a0f1a;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: #0a0f1e;
 }
 
 .ss-remote-view,
 .ss-local-view {
-  width: 100%;
-  height: 100%;
-  position: relative;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .ss-video {
@@ -407,16 +417,17 @@ onUnmounted(() => {
   height: 100%;
   object-fit: contain;
   display: block;
-}
+  background: #000;
 
-.mirror-none {
-  transform: none;
+  &.mirror-none {
+    transform: none;
+  }
 }
 
 .ss-remote-overlay {
   position: absolute;
-  bottom: 12px;
-  right: 12px;
+  bottom: 16px;
+  right: 16px;
   display: flex;
   gap: 8px;
 }
@@ -427,14 +438,14 @@ onUnmounted(() => {
   gap: 6px;
   padding: 7px 13px;
   border-radius: 20px;
-  background: rgba(0, 0, 0, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
   color: #fff;
   font-size: 0.75rem;
   font-weight: 700;
   font-family: "Tajawal", sans-serif;
   cursor: pointer;
-  backdrop-filter: blur(6px);
+  backdrop-filter: blur(4px);
   transition: background 0.15s;
 
   &:hover {
@@ -444,50 +455,49 @@ onUnmounted(() => {
 
 .ss-local-label {
   position: absolute;
-  bottom: 10px;
+  top: 12px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: rgba(20, 184, 166, 0.85);
-  color: #fff;
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 5px 13px;
+  gap: 5px;
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.7rem;
+  padding: 4px 12px;
   border-radius: 20px;
   backdrop-filter: blur(4px);
   white-space: nowrap;
 }
 
-/* ── Empty state ─────────────────────────────────────────── */
 .ss-empty {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
-  padding: 32px 20px;
+  gap: 12px;
+  padding: 24px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-muted);
 }
 
 .ss-empty-icon {
   opacity: 0.25;
+  margin-bottom: 4px;
 }
 
 .ss-empty h3 {
-  font-size: 1rem;
-  font-weight: 800;
-  color: rgba(255, 255, 255, 0.6);
   margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
 }
 
 .ss-empty p {
-  font-size: 0.78rem;
-  color: rgba(255, 255, 255, 0.35);
   margin: 0;
-  max-width: 280px;
+  font-size: 0.8rem;
 }
 
 .ss-actions {
@@ -495,18 +505,22 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  margin-top: 4px;
+  margin-top: 8px;
 }
 
 .mobile-hint {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: 1.5px solid var(--border-color);
+  border-radius: 8px;
+  padding: 6px 12px;
 }
 
-/* ── Footer ──────────────────────────────────────────────── */
+/* Footer */
 .ss-footer {
   display: flex;
   align-items: center;
@@ -515,20 +529,14 @@ onUnmounted(() => {
   border-top: 1.5px solid var(--border-color);
   background: var(--bg-surface);
   flex-shrink: 0;
-  gap: 12px;
+  gap: 10px;
 }
 
 .footer-left {
   flex: 1;
-  min-width: 0;
   overflow: hidden;
 }
 
-.footer-right {
-  flex-shrink: 0;
-}
-
-/* ── Sharing members ─────────────────────────────────────── */
 .sharing-members {
   display: flex;
   align-items: center;
@@ -546,15 +554,15 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 9px;
+  padding: 4px 10px;
   border-radius: 20px;
   border: 1.5px solid var(--border-color);
   background: var(--bg-elevated);
-  flex-shrink: 0;
+  white-space: nowrap;
   transition: all 0.15s;
 
   &.active {
-    border-color: rgba(20, 184, 166, 0.35);
+    border-color: rgba(20, 184, 166, 0.4);
     background: rgba(20, 184, 166, 0.08);
   }
 }
@@ -576,7 +584,6 @@ onUnmounted(() => {
 .sm-name {
   font-size: 0.72rem;
   font-weight: 700;
-  color: var(--text-primary);
-  white-space: nowrap;
+  color: var(--text-muted);
 }
 </style>

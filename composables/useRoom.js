@@ -89,7 +89,8 @@ export const useRoom = () => {
         _setupDataConn(conn);
       });
 
-      // Incoming media calls
+      // Incoming media calls — route through messageHandlers so all
+      // components (VideoGrid, ScreenShare) can handle them in one place.
       peer.on("call", (call) => {
         _handleIncomingCall(call);
       });
@@ -267,21 +268,30 @@ export const useRoom = () => {
   };
 
   // ── Media Core ────────────────────────────────────────────────────────────
+
+  // Always push the current reactive flags onto whatever tracks exist.
+  // Call this any time the stream is obtained (new or reused) so the flag
+  // and the actual track.enabled value are never out of sync.
+  const _syncTrackStates = (stream) => {
+    stream.getVideoTracks().forEach((t) => (t.enabled = isCameraActive.value));
+    stream.getAudioTracks().forEach((t) => (t.enabled = isMicActive.value));
+  };
+
   const getLocalStream = async (video = true) => {
-    if (localStream.value) return localStream.value;
+    if (localStream.value) {
+      // Re-sync every time we hand the stream to a new caller (e.g. callPeer)
+      // so that a mute toggled before the call still takes effect.
+      _syncTrackStates(localStream.value);
+      return localStream.value;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: video ? { width: 1280, height: 720, facingMode: "user" } : false,
         audio: { echoCancellation: true, noiseSuppression: true },
       });
       localStream.value = stream;
-
-      // Enable tracks according to active state
-      stream
-        .getVideoTracks()
-        .forEach((t) => (t.enabled = isCameraActive.value));
-      stream.getAudioTracks().forEach((t) => (t.enabled = isMicActive.value));
-
+      // Force-apply whatever flags were set before the stream arrived
+      _syncTrackStates(stream);
       return stream;
     } catch (e) {
       console.error("[Room] getUserMedia failed:", e);
@@ -290,21 +300,27 @@ export const useRoom = () => {
   };
 
   const toggleCamera = () => {
-    if (!localStream.value) return;
     isCameraActive.value = !isCameraActive.value;
-    localStream.value
-      .getVideoTracks()
-      .forEach((t) => (t.enabled = isCameraActive.value));
+    if (localStream.value) {
+      localStream.value
+        .getVideoTracks()
+        .forEach((t) => (t.enabled = isCameraActive.value));
+    }
   };
 
   const toggleMic = () => {
-    const audioTrack = localStream.value.getAudioTracks()[0];
-    if (audioTrack) {
-      audioTrack.enabled = !audioTrack.enabled;
-      isMicActive.value = audioTrack.enabled;
+    // Always derive the new state by flipping the flag, then push it to the
+    // track. Never read track.enabled to decide the next state — the flag IS
+    // the source of truth. This avoids the double-click bug where flag and
+    // track.enabled were one step out of sync.
+    isMicActive.value = !isMicActive.value;
+    if (localStream.value) {
+      localStream.value
+        .getAudioTracks()
+        .forEach((t) => (t.enabled = isMicActive.value));
     }
   };
-  
+
   const stopLocalStream = () => {
     if (localStream.value) {
       localStream.value.getTracks().forEach((t) => t.stop());
@@ -340,6 +356,10 @@ export const useRoom = () => {
     return call;
   };
 
+  // FIX: All incoming calls are emitted as "incoming-call" events through
+  // messageHandlers. Components decide how to handle them (VideoGrid answers
+  // regular calls; ScreenShare answers screen-share calls). No component
+  // should add another peer.on("call") listener — that would conflict.
   const _handleIncomingCall = async (call) => {
     const remotePeerId = call.peer;
     for (const handler of messageHandlers) {
@@ -384,21 +404,33 @@ export const useRoom = () => {
     mediaConns.delete(remotePeerId);
   };
 
-  // ── Screen share (mobile-friendly via display capture or camera fallback) ──
+  // ── Screen share ──────────────────────────────────────────────────────────
+  // FIX: on PWA/mobile, use getDisplayMedia with proper constraints.
+  // Rear camera fallback is kept for devices that block getDisplayMedia.
   const getScreenStream = async () => {
-    // Try display capture first
     if (navigator.mediaDevices?.getDisplayMedia) {
       try {
-        return await navigator.mediaDevices.getDisplayMedia({
-          video: { cursor: "always", displaySurface: "monitor" },
-          audio: true,
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            cursor: "always",
+            displaySurface: "monitor",
+            // Hint for browsers/PWA that support it
+            selfBrowserSurface: "exclude",
+          },
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            suppressLocalAudioPlayback: true,
+          },
         });
+        return stream;
       } catch (e) {
         if (e.name === "NotAllowedError") return null;
-        // On mobile, fall back to camera
+        // Fall through to mobile camera fallback
       }
     }
-    // Mobile fallback: use rear camera as "share"
+
+    // Mobile PWA fallback: use rear camera as "share"
     try {
       return await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },

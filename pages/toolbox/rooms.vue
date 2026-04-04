@@ -103,14 +103,31 @@
       </div>
     </div>
 
-    <!-- PWA install prompt -->
-    <div v-if="showInstall" class="pwa-banner">
+    <!-- Android / Chrome: native install prompt -->
+    <div v-if="showAndroidInstall" class="pwa-banner">
       <Icon name="mdi:cellphone-arrow-down" size="18" />
       <span>{{ $t("installApp") }}</span>
       <button class="pwa-install-btn" @click="installPwa">
         {{ $t("install") }}
       </button>
-      <button class="pwa-close-btn" @click="showInstall = false">
+      <button class="pwa-close-btn" @click="dismissInstall">
+        <Icon name="mdi:close" size="14" />
+      </button>
+    </div>
+
+    <!-- iOS Safari: manual "Add to Home Screen" hint -->
+    <div v-if="showIosHint" class="pwa-banner ios">
+      <Icon name="mdi:apple" size="18" />
+      <span
+        >Tap
+        <Icon
+          name="mdi:export-variant"
+          size="14"
+          style="vertical-align: middle"
+        />
+        then <strong>Add to Home Screen</strong></span
+      >
+      <button class="pwa-close-btn" @click="dismissInstall">
         <Icon name="mdi:close" size="14" />
       </button>
     </div>
@@ -118,7 +135,9 @@
 </template>
 
 <script setup>
-const { locale, t } = useI18n();
+import { ref, computed, onMounted } from "vue";
+
+const { locale } = useI18n();
 const router = useRouter();
 
 const name = ref(
@@ -127,8 +146,11 @@ const name = ref(
 const joinCode = ref("");
 const tab = ref("create");
 const loading = ref(false);
-const showInstall = ref(false);
+
+// ── Install prompt state ───────────────────────────────────────────────────
 let deferredPrompt = null;
+const showAndroidInstall = ref(false);
+const showIosHint = ref(false);
 
 const features = [
   { key: "featureVideo", icon: "mdi:video-outline" },
@@ -157,23 +179,56 @@ const handleJoin = async () => {
   );
 };
 
-onMounted(() => {
-  if (import.meta.client) {
-    window.addEventListener("beforeinstallprompt", (e) => {
-      e.preventDefault();
-      deferredPrompt = e;
-      showInstall.value = true;
-    });
-  }
-});
+const dismissInstall = () => {
+  showAndroidInstall.value = false;
+  showIosHint.value = false;
+  // Don't show again for 7 days
+  localStorage.setItem("pwa-dismissed", String(Date.now()));
+};
 
 const installPwa = async () => {
   if (!deferredPrompt) return;
   deferredPrompt.prompt();
   const { outcome } = await deferredPrompt.userChoice;
   deferredPrompt = null;
-  showInstall.value = false;
+  showAndroidInstall.value = false;
 };
+
+onMounted(() => {
+  if (!import.meta.client) return;
+
+  // Don't show if user dismissed recently (7 days)
+  const dismissed = localStorage.getItem("pwa-dismissed");
+  if (dismissed && Date.now() - Number(dismissed) < 7 * 24 * 60 * 60 * 1000)
+    return;
+
+  // Don't show if already installed (running as standalone PWA)
+  const isStandalone =
+    window.matchMedia("(display-mode: standalone)").matches ||
+    window.navigator.standalone === true;
+  if (isStandalone) return;
+
+  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isAndroidChrome =
+    /android/i.test(navigator.userAgent) && /chrome/i.test(navigator.userAgent);
+
+  if (isIos) {
+    // iOS Safari never fires beforeinstallprompt — show manual hint instead
+    showIosHint.value = true;
+  } else if (isAndroidChrome) {
+    // Android Chrome fires beforeinstallprompt when installability criteria pass.
+    // The #1 reason it doesn't fire: missing or broken icon files in public/.
+    // Make sure public/pwa-192.png and public/pwa-512.png exist.
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      showAndroidInstall.value = true;
+    });
+
+    // Fallback: if the event never fires after 3s, the app is likely already
+    // installed or the manifest/icons are broken — stay silent.
+  }
+});
 </script>
 
 <style scoped lang="scss">
@@ -379,6 +434,15 @@ const installPwa = async () => {
   z-index: 999;
   max-width: calc(100vw - 32px);
   white-space: nowrap;
+
+  &.ios {
+    white-space: normal;
+    max-width: 320px;
+    text-align: center;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
 
   @media (max-width: 480px) {
     font-size: 0.75rem;

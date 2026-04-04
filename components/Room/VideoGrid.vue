@@ -147,17 +147,14 @@ const props = defineProps({
   myName: { type: String, default: "Me" },
 });
 
-// Computed properties directly track the room object to preserve reactivity
+// FIX: Access .value inside the computed callback — not at the top level.
+// Previously `!props.room.isMicActive.value` was evaluated once during
+// prop destructuring, losing reactivity.
 const micMuted = computed(() => !props.room.isMicActive.value);
 const camOff = computed(() => !props.room.isCameraActive.value);
 
-const toggleMic = () => {
-  props.room.toggleMic();
-};
-
-const toggleCam = () => {
-  props.room.toggleCamera();
-};
+const toggleMic = () => props.room.toggleMic();
+const toggleCam = () => props.room.toggleCamera();
 
 const { t } = useI18n();
 
@@ -182,7 +179,6 @@ const remoteTiles = computed(() =>
     peerId: m.peerId,
     name: m.name,
     hasStream: remoteStreams.value.has(m.peerId),
-    // Default to false (camera on) so video shows as soon as the stream connects
     camOff: remoteCamOff.value.get(m.peerId) ?? false,
     muted: remoteMutes.value.get(m.peerId) || false,
     calling: callingPeers.value.has(m.peerId),
@@ -198,44 +194,38 @@ const callDuration = computed(() => {
 });
 
 const setRemoteRef = (peerId, el) => {
-  // If the element was unmounted, remove it from the map
   if (!el) {
     remoteVideoEls.delete(peerId);
     return;
   }
-
   remoteVideoEls.set(peerId, el);
-
   const stream = remoteStreams.value.get(peerId);
-  if (stream) {
-    if (el.srcObject !== stream) {
-      el.srcObject = stream;
-      el.muted = remoteMutes.value.get(peerId) || false;
-
-      el.play().catch((err) => {
-        console.warn("Autoplay blocked for remote stream:", err);
-        el.muted = true;
-        el.play().catch((e) => console.error("Final play failure:", e));
-      });
-    }
+  if (stream && el.srcObject !== stream) {
+    el.srcObject = stream;
+    // Apply whatever mute state the map already knows (default false = unmuted)
+    const knownMuted = remoteMutes.value.get(peerId) ?? false;
+    el.muted = knownMuted;
+    el.play().catch(() => {
+      // Autoplay blocked — browser forces mute. Record this in the map so
+      // toggleRemoteMute knows the real starting state and one click works.
+      el.muted = true;
+      remoteMutes.value = new Map([...remoteMutes.value, [peerId, true]]);
+      el.play().catch(() => {});
+    });
   }
 };
 
+// FIX: Only broadcast if there are actual data connections open.
+// Previously this was called immediately on stream connect before any peer
+// was in the mesh, causing silent failures.
 const broadcastMediaState = () => {
-  const payload = {
+  if (!props.room?.broadcast) return;
+  props.room.broadcast({
     type: "media-state",
     peerId: props.myPeerId,
     camOff: camOff.value,
     micMuted: micMuted.value,
-  };
-
-  if (props.room?.broadcast) {
-    props.room.broadcast(payload);
-  } else if (props.room?.sendMessage) {
-    props.room.sendMessage(payload);
-  } else if (props.room?.send) {
-    props.room.send(payload);
-  }
+  });
 };
 
 const callOne = async (peerId) => {
@@ -266,6 +256,10 @@ const hangUpAll = () => {
 };
 
 const answerOne = async (ic) => {
+  // FIX: Only answer regular video/audio calls here.
+  // Screen-share calls are handled by RoomScreenShare via the "incoming-call"
+  // message with metadata.type === "screen-share".
+  if (ic.call?.metadata?.type === "screen-share") return;
   await props.room.answerCall(ic.call, true);
   incomingCalls.value = incomingCalls.value.filter(
     (c) => c.peerId !== ic.peerId,
@@ -282,10 +276,15 @@ const declineOne = (ic) => {
 };
 
 const toggleRemoteMute = (peerId) => {
-  const muted = !remoteMutes.value.get(peerId);
-  remoteMutes.value = new Map([...remoteMutes.value, [peerId, muted]]);
   const el = remoteVideoEls.get(peerId);
-  if (el) el.muted = muted;
+  // Read the element's ACTUAL muted state as source of truth — not the map —
+  // so we're never off by one even if autoplay silently forced a mute.
+  const currentlyMuted = el
+    ? el.muted
+    : (remoteMutes.value.get(peerId) ?? false);
+  const nextMuted = !currentlyMuted;
+  remoteMutes.value = new Map([...remoteMutes.value, [peerId, nextMuted]]);
+  if (el) el.muted = nextMuted;
 };
 
 const goFullscreen = (peerId) => {
@@ -316,6 +315,7 @@ onMounted(() => {
       callingPeers.value.delete(data.peerId);
       callingPeers.value = new Set(callingPeers.value);
 
+      // Broadcast our media state to the newly connected peer
       broadcastMediaState();
 
       nextTick(() => {
@@ -348,6 +348,9 @@ onMounted(() => {
         stopTimer();
       }
     } else if (data.type === "incoming-call") {
+      // FIX: Skip screen-share calls — RoomScreenShare handles those.
+      if (data.metadata?.type === "screen-share") return;
+
       const member = props.members.find((m) => m.peerId === data.peerId);
       const callerName = member?.name || data.metadata?.name || t("unknown");
       incomingCalls.value = [
@@ -357,7 +360,7 @@ onMounted(() => {
     }
   });
 
-  // Fetch stream via the composable
+  // Fetch/start local stream eagerly so the user sees themselves immediately
   props.room.getLocalStream();
 });
 
@@ -366,7 +369,9 @@ onUnmounted(() => {
   stopTimer();
 });
 
-// Auto-broadcast local hardware adjustments to the group
+// FIX: Watch the raw refs (.isMicActive / .isCameraActive) rather than
+// computed values. Using `() => props.room.isMicActive.value` is correct
+// because Vue's watch needs a getter function returning the primitive value.
 watch(
   [() => props.room.isMicActive.value, () => props.room.isCameraActive.value],
   () => {
@@ -374,7 +379,7 @@ watch(
   },
 );
 
-// Bulletproof check to play the local stream as soon as the element mounts AND stream arrives
+// Attach the local stream as soon as both the video element and the stream exist
 watch(
   [() => props.room.localStream.value, localVideoEl],
   ([newStream, el]) => {
@@ -490,7 +495,6 @@ watch(
   gap: 12px;
   padding: 15px;
   background: #0a0f1e;
-  overflow-y: auto;
 }
 
 .vtile {

@@ -172,23 +172,12 @@ const tabs = [
   { key: "screen", labelKey: "screenShare", icon: "mdi:monitor-share" },
 ];
 
+// FIX: Removed the previous activeTab watcher that disabled/enabled camera
+// tracks whenever the tab changed. That logic was fighting with the user's
+// own camera toggle (isCameraActive) and caused the camera to stay off after
+// switching back to the video tab. The camera state is now fully owned by
+// useRoom.toggleCamera() and RoomVideoGrid — this page should not touch tracks.
 watch(activeTab, (newTab) => {
-  if (newTab !== "video") {
-    // Only stop the camera, NOT the whole stream/mic
-    if (room.localStream.value) {
-      room.localStream.value.getVideoTracks().forEach((track) => {
-        track.enabled = false; // This "mutes" the camera without killing the hardware
-      });
-    }
-  } else {
-    // Re-enable camera when switching back to video
-    if (room.localStream.value) {
-      room.localStream.value.getVideoTracks().forEach((track) => {
-        track.enabled = true;
-      });
-    }
-  }
-
   if (newTab === "chat") unreadCount.value = 0;
 });
 
@@ -206,10 +195,14 @@ const clearUnread = () => {
   if (activeTab.value === "chat") unreadCount.value = 0;
 };
 
+// FIX: Only count messages that weren't sent by me and aren't visible
 watch(
   () => room.messages.value.length,
-  () => {
-    if (activeTab.value !== "chat") unreadCount.value++;
+  (newLen, oldLen) => {
+    if (activeTab.value === "chat") return; // already visible
+    const newMessages = room.messages.value.slice(oldLen);
+    const hasIncoming = newMessages.some((m) => !m.fromMe);
+    if (hasIncoming) unreadCount.value++;
   },
 );
 
@@ -230,6 +223,7 @@ onMounted(async () => {
     room.roomId.value = roomId.value;
     room.connectTo(roomId.value);
 
+    // Connect to any additional peers we learn about via join-ack
     watch(room.members, (members) => {
       members.forEach((m) => {
         if (!room.getDataConn(m.peerId)) {
@@ -256,8 +250,7 @@ onUnmounted(() => {
 .room-page {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
-  max-height: 100dvh;
+  min-height: 100dvh;
   overflow: hidden;
   background: var(--bg-page);
   font-family: "Tajawal", sans-serif;

@@ -200,7 +200,8 @@ import { useTelegram } from "~/composables/useTelegram";
 
 const { locale, t } = useI18n();
 const { $toast } = useNuxtApp();
-const { connect, getSession, disconnect, isConnected } = useTelegram();
+const { connect, sendCode, signIn, getSession, disconnect, isConnected } =
+  useTelegram();
 
 const step = ref("connect");
 const showGuide = ref(false);
@@ -209,7 +210,6 @@ const signing = ref(false);
 const form = reactive({ apiId: "", apiHash: "", phone: "" });
 const otpDigits = ref(["", "", "", "", ""]);
 const otpRefs = ref([]);
-let tgClient = null;
 
 const tools = [
   {
@@ -326,19 +326,12 @@ const handleConnect = async () => {
   }
   connecting.value = true;
   try {
-    const { TelegramClient } = await import("telegram");
-    const { StringSession } = await import("telegram/sessions");
-    tgClient = new TelegramClient(
-      new StringSession(""),
-      parseInt(form.apiId),
-      form.apiHash,
-      { connectionRetries: 5 },
-    );
-    await tgClient.connect();
-    await tgClient.sendCode(
-      { apiId: parseInt(form.apiId), apiHash: form.apiHash },
-      form.phone,
-    );
+    // sendCode now stores the temp client + codeHash internally
+    await sendCode({
+      apiId: form.apiId,
+      apiHash: form.apiHash,
+      phone: form.phone,
+    });
     step.value = "otp";
     $toast.info(t("gramkit.toast.codeSent"));
   } catch (e) {
@@ -353,22 +346,14 @@ const handleSignIn = async () => {
   if (code.length < 5) return;
   signing.value = true;
   try {
-    await tgClient.signInUser(
-      { apiId: parseInt(form.apiId), apiHash: form.apiHash },
-      {
-        phoneNumber: form.phone,
-        phoneCode: async () => code,
-        onError: (e) => {
-          throw e;
-        },
-      },
-    );
-    await connect({
+    // signIn promotes the temp client; returns the saved session string
+    const savedSession = await signIn({
       apiId: form.apiId,
       apiHash: form.apiHash,
-      session: tgClient.session.save(),
+      phone: form.phone,
+      code,
     });
-    localStorage.setItem("tg_session", getSession());
+    localStorage.setItem("tg_session", savedSession);
     localStorage.setItem(
       "tg_creds",
       JSON.stringify({ apiId: form.apiId, apiHash: form.apiHash }),
