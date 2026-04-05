@@ -466,5 +466,32 @@
     "install": "Install",
     "later": "Later",
     "close": "Close"
+  },
+  "mirrorDesc": "Peer-to-peer video & audio calls, screen sharing, collaborative whiteboard, live chat — no server, no signup.",
+  "mirrorFeature": {
+    "video": "Video & Audio",
+    "screen": "Screen Share",
+    "board": "Whiteboard",
+    "chat": "Live Chat"
+  },
+  "p2pBadge": "P2P · No data leaves your device",
+  "gramkitTag": "Needs API keys",
+  "gramkitReq": {
+    "label": "Requires your own Telegram API credentials from"
+  },
+  "gramkitHint": {
+    "toggle": "How to get your Telegram API credentials",
+    "step1": {
+      "title": "Go to my.telegram.org",
+      "desc": "Log in with your Telegram phone number. This is Telegram's official developer portal."
+    },
+    "step2": {
+      "title": "Create an application",
+      "desc": "Click \"API development tools\", fill in any app name and platform. You'll receive your api_id (a number) and api_hash (a string)."
+    },
+    "step3": {
+      "title": "Enter them in GramKit",
+      "desc": "Paste your api_id and api_hash into the connect form. Your credentials stay in your browser — they are never sent to any server other than Telegram's own."
+    }
   }
 }

@@ -23,25 +23,24 @@ Screen sharing · Video calls · Whiteboard · Telegram tools — all in one app
 
 KKit is a **fully self-hosted, serverless toolbox** built with Nuxt 3. It replaces a stack of paid SaaS tools with a single open-source app that you deploy once and use forever — for free.
 
-All real-time features (screen share, video calls, whiteboard, clipboard sync) run **peer-to-peer via WebRTC**. Your server never touches the data stream. Your hosting bill doesn't change whether you use it zero times or ten thousand times.
+All real-time features (screen share, video calls, whiteboard, chat) run **peer-to-peer via WebRTC**. Your server never touches the data stream. Your hosting bill doesn't change whether you use it zero times or ten thousand times.
 
 ---
 
 ## 🚀 Features
 
-### 📡 Mirror — Real-time Device Sync
+### 📡 Mirror Room — Real-time Collaboration
 
-Connect any two devices instantly by scanning a QR code. No accounts, no installs on the other device — just open a link.
+Create or join a room instantly with a unique link. No accounts, no installs — just share the link and connect.
 
-| Feature               | Description                                                                             |
-| --------------------- | --------------------------------------------------------------------------------------- |
-| 🖥️ **Screen Share**   | Share your screen to any device across any network. Host captures, viewer watches live. |
-| 🎥 **Video Call**     | Free, unlimited video and audio calls. Peer-to-peer, no time limits, no watermarks.     |
-| 🎨 **Whiteboard**     | Collaborative drawing board. Draw on one device, see it live on the other.              |
-| 📋 **Clipboard Sync** | Send text and links instantly between devices.                                          |
-| 📝 **Live Notepad**   | Type on one device, see it appear in real time on the other.                            |
+| Feature             | Description                                                                                                 |
+| ------------------- | ----------------------------------------------------------------------------------------------------------- |
+| 🎥 **Video Calls**  | Free, unlimited video and audio calls with a live participant grid. Camera and mic can be toggled per user. |
+| 🖥️ **Screen Share** | Share your screen to all room participants in real time.                                                    |
+| 🎨 **Whiteboard**   | Collaborative drawing canvas synced live across all connected members.                                      |
+| 💬 **Chat**         | In-room text messaging and file sharing — images, videos, PDFs, documents, and more.                        |
 
-> All Mirror features work across **different WiFi networks**, different countries, mobile and desktop — powered by WebRTC + PeerJS.
+> All Mirror Room features work across **different networks and devices** — powered by WebRTC + PeerJS. Your data flows directly browser-to-browser.
 
 ---
 
@@ -49,17 +48,17 @@ Connect any two devices instantly by scanning a QR code. No accounts, no install
 
 Connect your Telegram account once using your own API credentials and unlock a suite of tools that Telegram's official app doesn't offer.
 
-| Tool               | Description                                                              |
-| ------------------ | ------------------------------------------------------------------------ |
-| 💼 **Job Scanner** | Scan all your channels and groups for job postings automatically         |
-| 📊 **Analytics**   | Visualize message activity, peak hours, and top keywords for any channel |
-| 🔔 **Monitor**     | Get alerts when specific keywords appear in your channels                |
-| 🧹 **Cleaner**     | Bulk delete your own messages from any group or channel                  |
-| 👥 **Members**     | Export and browse member lists from groups you admin                     |
-| 🖼️ **Media**       | Browse and download media files from any channel                         |
-| 📦 **Archiver**    | Archive messages and media from channels                                 |
-| 🔖 **Saves**       | Manage your saved messages                                               |
-| 🎁 **Wrapped**     | Your personal Telegram year-in-review stats                              |
+| Tool               | Description                                                                                        |
+| ------------------ | -------------------------------------------------------------------------------------------------- |
+| 💼 **Job Scanner** | Scan all your channels and groups for job postings automatically                                   |
+| 📊 **Analytics**   | Visualize message activity, peak hours, and top keywords for any channel                           |
+| 🔔 **Monitor**     | Track changes and get alerts for specific keywords in your channels                                |
+| 🧹 **Cleaner**     | Bulk delete your own messages from any group or channel                                            |
+| 👥 **Members**     | Export and browse member lists from groups you admin                                               |
+| 🖼️ **Media**       | Browse and download media files from your chats                                                    |
+| 📦 **Archiver**    | Automatically archive inactive chats based on configurable rules                                   |
+| 🔖 **Saves**       | Browse, search, and export your Telegram Saved Messages                                            |
+| 🎁 **Wrapped**     | Your personal Telegram stats — messages sent, top contacts, activity by hour, and personality type |
 
 > Your Telegram session stays **in your browser only** — never sent to any server.
 
@@ -67,27 +66,28 @@ Connect your Telegram account once using your own API credentials and unlock a s
 
 ## 💡 Why KKit vs Paid Alternatives?
 
-| Feature           | KKit         | Zoom           | TeamViewer | Miro      | Pushbullet |
-| ----------------- | ------------ | -------------- | ---------- | --------- | ---------- |
-| Screen Share      | ✅ Free      | 💰 Paid        | 💰 Paid    | —         | —          |
-| Video Calls       | ✅ Unlimited | ⏱️ 40min limit | 💰 Paid    | —         | —          |
-| Whiteboard        | ✅ Free      | 💰 Paid        | —          | 💰 $10/mo | —          |
-| Clipboard Sync    | ✅ Free      | —              | —          | —         | 💰 Paid    |
-| Self-hosted       | ✅ Yes       | ❌ No          | ❌ No      | ❌ No     | ❌ No      |
-| No account needed | ✅ Yes       | ❌ No          | ❌ No      | ❌ No     | ❌ No      |
-| Open source       | ✅ Yes       | ❌ No          | ❌ No      | ❌ No     | ❌ No      |
+| Feature                     | KKit         | Zoom           | TeamViewer | Miro      |
+| --------------------------- | ------------ | -------------- | ---------- | --------- |
+| Screen Share                | ✅ Free      | 💰 Paid        | 💰 Paid    | —         |
+| Video Calls                 | ✅ Unlimited | ⏱️ 40min limit | 💰 Paid    | —         |
+| Whiteboard                  | ✅ Free      | 💰 Paid        | —          | 💰 $10/mo |
+| In-room Chat & File Sharing | ✅ Free      | 💰 Paid        | —          | —         |
+| Self-hosted                 | ✅ Yes       | ❌ No          | ❌ No      | ❌ No     |
+| No account needed           | ✅ Yes       | ❌ No          | ❌ No      | ❌ No     |
+| Open source                 | ✅ Yes       | ❌ No          | ❌ No      | ❌ No     |
 
 ---
 
 ## 🏗️ Tech Stack
 
-- **[Nuxt 3](https://nuxt.com)** — Full-stack Vue framework
+- **[Nuxt 3](https://nuxt.com)** — Full-stack Vue framework with SSR and PWA support
 - **[Vue 3](https://vuejs.org)** — Composition API + `<script setup>`
 - **[PeerJS](https://peerjs.com)** — WebRTC abstraction for P2P connections
-- **[GramJS](https://github.com/gram-js/gramjs)** — Telegram MTProto client running in the browser
+- **[GramJS](https://github.com/gram-js/gramjs)** — Telegram MTProto client running entirely in the browser
 - **[WebRTC](https://webrtc.org)** — Browser-native peer-to-peer media streaming
-- **SCSS** — Scoped component styles with CSS variables for theming
-- **i18n** — Arabic (RTL) + English support built in
+- **SCSS** — Scoped component styles with CSS custom properties for dark/light theming
+- **[@vite-pwa/nuxt](https://vite-pwa-org.netlify.app/frameworks/nuxt)** — Installable PWA with auto-update and offline support
+- **[@nuxtjs/i18n](https://i18n.nuxtjs.org)** — Arabic (RTL) + English (LTR) support built in
 
 ---
 
@@ -108,16 +108,16 @@ cd kkit
 # Install dependencies
 npm install
 
-# Start development server
+# Start development server (HTTPS is enabled by default — required for WebRTC + PWA)
 npm run dev
 ```
 
-### For local cross-device testing (Mirror features)
+### For local cross-device testing (Mirror Room features)
 
-Screen share and video calls require HTTPS. To test on your phone from your laptop:
+The dev server runs with HTTPS by default. To also expose it on your local network so you can test on your phone:
 
 ```bash
-npm run dev -- --https --host
+npm run dev -- --host
 ```
 
 Your phone can then access it via `https://YOUR_LAN_IP:3000`.
@@ -131,23 +131,21 @@ npm run preview
 
 ---
 
-## 📱 Mirror — How It Works
+## 📡 Mirror Room — How It Works
 
 ```
-Host opens Mirror page → gets a unique session ID
-         ↓
-Host clicks a mode (Screen Share / Video / Whiteboard etc.)
-         ↓
-A QR code + share link appears
-         ↓
-Viewer scans QR on their phone
-         ↓
+User opens Toolbox → enters their name → creates a room
+              ↓
+Gets a unique room ID and shareable link
+              ↓
+Other participants open the link and join
+              ↓
 PeerJS broker exchanges a tiny handshake (< 1KB)
-         ↓
-WebRTC direct P2P connection established
-         ↓
-All data flows directly browser → browser
-Your server sees nothing after this point
+              ↓
+WebRTC direct P2P connections established between all peers
+              ↓
+Video, audio, whiteboard, chat, and screen share flow
+directly browser → browser. Your server sees nothing.
 ```
 
 ---
@@ -159,15 +157,26 @@ GramKit uses the **official Telegram API** (MTProto) through GramJS running enti
 - Your API ID, API Hash, and phone number **never leave your device**
 - Your session string is stored only in `localStorage` in your own browser
 - No backend proxy — your browser connects directly to Telegram's servers
-- You can revoke the session anytime from Telegram Settings → Active Sessions
+- You can revoke the session anytime from Telegram Settings → Devices → Active Sessions
 
 To use GramKit you need a free Telegram API key from [my.telegram.org](https://my.telegram.org).
 
 ---
 
+## 📱 PWA Support
+
+KKit is a fully installable Progressive Web App:
+
+- Standalone display mode — no browser chrome, feels like a native app
+- Auto-updating service worker via Workbox
+- Safe area support for iOS notch and home bar
+- Works on Android, iOS, and desktop
+
+---
+
 ## 🌍 Internationalization
 
-KKit ships with full **Arabic (RTL)** and **English (LTR)** support. The UI automatically mirrors for RTL languages including layout, icons, and text direction.
+KKit ships with full **Arabic (RTL)** and **English (LTR)** support. The UI automatically mirrors for RTL languages — layout, icons, and text direction all adapt without any page reload.
 
 ---
 
@@ -176,20 +185,23 @@ KKit ships with full **Arabic (RTL)** and **English (LTR)** support. The UI auto
 ```
 kkit/
 ├── components/
-│   ├── Mirror/          # Screen share, video call, whiteboard, clipboard, notepad
-│   ├── Shared/Ui/       # Reusable UI components (buttons, inputs, modals, tables)
-│   └── Home/            # Landing page components
+│   ├── Room/               # Chat, VideoGrid, Whiteboard, ScreenShare
+│   ├── Mirror/             # SharePanel for room link sharing
+│   ├── Shared/Ui/          # Reusable UI components (buttons, inputs, modals, tables)
+│   └── Home/               # Landing page components
 ├── composables/
-│   ├── useMirrorPeer.js # PeerJS WebRTC abstraction
-│   ├── useTelegram.js   # GramJS Telegram client
+│   ├── useRoom.js          # WebRTC room logic via PeerJS (video, chat, whiteboard)
+│   ├── useTelegram.js      # GramJS Telegram client session management
+│   ├── useTheme.js         # Dark/light mode + color palette switcher
 │   └── ...
 ├── pages/
-│   ├── toolbox/mirror.vue  # Mirror hub page
+│   ├── index.vue           # App entry — GramKit / Toolbox selector
+│   ├── toolbox/
+│   │   ├── rooms.vue       # Mirror Room lobby (create / join)
+│   │   └── room/[id].vue   # Active room page
 │   └── gramkit/            # All GramKit tool pages
-├── server/
-│   ├── api/             # Server API endpoints
-│   └── routes/ws/       # WebSocket signaling server
-└── i18n/locales/        # ar.json + en.json translations
+├── server/api/tg/          # Nitro server routes for Telegram API calls
+└── i18n/locales/           # ar.json + en.json
 ```
 
 ---

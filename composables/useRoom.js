@@ -268,10 +268,6 @@ export const useRoom = () => {
   };
 
   // ── Media Core ────────────────────────────────────────────────────────────
-
-  // Always push the current reactive flags onto whatever tracks exist.
-  // Call this any time the stream is obtained (new or reused) so the flag
-  // and the actual track.enabled value are never out of sync.
   const _syncTrackStates = (stream) => {
     stream.getVideoTracks().forEach((t) => (t.enabled = isCameraActive.value));
     stream.getAudioTracks().forEach((t) => (t.enabled = isMicActive.value));
@@ -356,10 +352,6 @@ export const useRoom = () => {
     return call;
   };
 
-  // FIX: All incoming calls are emitted as "incoming-call" events through
-  // messageHandlers. Components decide how to handle them (VideoGrid answers
-  // regular calls; ScreenShare answers screen-share calls). No component
-  // should add another peer.on("call") listener — that would conflict.
   const _handleIncomingCall = async (call) => {
     const remotePeerId = call.peer;
     for (const handler of messageHandlers) {
@@ -405,8 +397,6 @@ export const useRoom = () => {
   };
 
   // ── Screen share ──────────────────────────────────────────────────────────
-  // FIX: on PWA/mobile, use getDisplayMedia with proper constraints.
-  // Rear camera fallback is kept for devices that block getDisplayMedia.
   const getScreenStream = async () => {
     if (navigator.mediaDevices?.getDisplayMedia) {
       try {
