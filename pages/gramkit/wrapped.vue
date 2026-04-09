@@ -12,11 +12,10 @@
     </div>
 
     <template v-else>
-      <!-- ── Header ── -->
       <div class="tool-header">
-        <NuxtLink to="/gramkit" class="back-btn"
-          ><Icon name="mdi:arrow-left" size="16"
-        /></NuxtLink>
+        <NuxtLink to="/gramkit" class="back-btn">
+          <Icon name="mdi:arrow-left" size="16" />
+        </NuxtLink>
         <div class="tool-header-icon wrapped">
           <Icon name="mdi:chart-timeline-variant-shimmer" size="22" />
         </div>
@@ -42,7 +41,7 @@
         </div>
       </div>
 
-      <!-- ── Period selector ── -->
+      <!-- Period selector -->
       <div v-if="!result" class="period-picker">
         <div class="period-label">{{ $t("gramkit.wrapped.period") }}</div>
         <div class="seg-control">
@@ -58,7 +57,7 @@
         </div>
       </div>
 
-      <!-- ── Progress ── -->
+      <!-- Loading -->
       <div v-if="loading" class="loading-wrap">
         <SharedUiIndicatorsProgress
           type="linear"
@@ -69,9 +68,9 @@
         <p class="loading-msg">{{ loadingMsg }}</p>
       </div>
 
-      <!-- ── Results ── -->
+      <!-- Results -->
       <div v-if="result && !loading" class="wrapped-results">
-        <!-- Hero card -->
+        <!-- Hero -->
         <div class="hero-card">
           <div class="hero-bg" />
           <div class="hero-content">
@@ -86,9 +85,8 @@
           </div>
         </div>
 
-        <!-- Stats grid -->
+        <!-- Primary stats grid -->
         <div class="wrapped-grid">
-          <!-- Total messages sent -->
           <div class="wcard wcard--blue">
             <div class="wcard-icon">
               <Icon name="mdi:message-text-outline" size="26" />
@@ -98,8 +96,6 @@
               {{ $t("gramkit.wrapped.stats.sent") }}
             </div>
           </div>
-
-          <!-- Total received -->
           <div class="wcard wcard--purple">
             <div class="wcard-icon">
               <Icon name="mdi:message-arrow-left-outline" size="26" />
@@ -111,8 +107,6 @@
               {{ $t("gramkit.wrapped.stats.received") }}
             </div>
           </div>
-
-          <!-- Active days -->
           <div class="wcard wcard--green">
             <div class="wcard-icon">
               <Icon name="mdi:calendar-check-outline" size="26" />
@@ -122,8 +116,6 @@
               {{ $t("gramkit.wrapped.stats.activeDays") }}
             </div>
           </div>
-
-          <!-- Channels read -->
           <div class="wcard wcard--orange">
             <div class="wcard-icon">
               <Icon name="mdi:telescope" size="26" />
@@ -133,8 +125,6 @@
               {{ $t("gramkit.wrapped.stats.channelsRead") }}
             </div>
           </div>
-
-          <!-- Media sent -->
           <div class="wcard wcard--teal">
             <div class="wcard-icon">
               <Icon name="mdi:image-outline" size="26" />
@@ -144,8 +134,6 @@
               {{ $t("gramkit.wrapped.stats.media") }}
             </div>
           </div>
-
-          <!-- Avg messages per day -->
           <div class="wcard wcard--red">
             <div class="wcard-icon">
               <Icon name="mdi:trending-up" size="26" />
@@ -157,7 +145,50 @@
           </div>
         </div>
 
-        <!-- Night owl / early bird -->
+        <!-- Secondary stats row -->
+        <div class="secondary-stats">
+          <div class="sstat">
+            <Icon name="mdi:fire" size="18" class="sstat-icon orange" />
+            <div class="sstat-num">{{ result.longestStreak }}</div>
+            <div class="sstat-label">
+              {{ $t("gramkit.wrapped.stats.streak") }}
+            </div>
+          </div>
+          <div class="sstat">
+            <Icon name="mdi:link-variant" size="18" class="sstat-icon blue" />
+            <div class="sstat-num">{{ result.linksSent }}</div>
+            <div class="sstat-label">
+              {{ $t("gramkit.wrapped.stats.links") }}
+            </div>
+          </div>
+          <div class="sstat">
+            <Icon name="mdi:format-size" size="18" class="sstat-icon purple" />
+            <div class="sstat-num">{{ result.avgCharsPerMsg }}</div>
+            <div class="sstat-label">
+              {{ $t("gramkit.wrapped.stats.avgChars") }}
+            </div>
+          </div>
+          <div class="sstat">
+            <Icon name="mdi:reply-outline" size="18" class="sstat-icon teal" />
+            <div class="sstat-num">{{ result.responseRate }}%</div>
+            <div class="sstat-label">
+              {{ $t("gramkit.wrapped.stats.responseRate") }}
+            </div>
+          </div>
+          <div class="sstat">
+            <Icon
+              name="mdi:account-group-outline"
+              size="18"
+              class="sstat-icon green"
+            />
+            <div class="sstat-num">{{ result.groupsActive }}</div>
+            <div class="sstat-label">
+              {{ $t("gramkit.wrapped.stats.groups") }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Peak time insight -->
         <div class="insight-card">
           <div class="insight-icon">
             <Icon
@@ -187,11 +218,15 @@
                   hour: formatHour(result.peakHour),
                 })
               }}
+              ·
+              {{
+                $t("gramkit.wrapped.peakDay", { day: result.peakWeekdayName })
+              }}
             </div>
           </div>
         </div>
 
-        <!-- Activity heatmap -->
+        <!-- Hour chart -->
         <div class="section-card">
           <div class="section-title">
             <Icon name="mdi:clock-time-four-outline" size="18" />
@@ -214,8 +249,31 @@
           </div>
         </div>
 
-        <!-- Top contacts -->
-        <div class="section-card" v-if="result.topContacts.length">
+        <!-- Weekday chart -->
+        <div class="section-card">
+          <div class="section-title">
+            <Icon name="mdi:calendar-week-outline" size="18" />
+            {{ $t("gramkit.wrapped.activityByDay") }}
+          </div>
+          <div class="weekday-chart">
+            <div
+              v-for="(count, i) in result.byWeekday"
+              :key="i"
+              class="wd-col"
+              :title="`${weekdayNames[i]} — ${count}`"
+            >
+              <div
+                class="wd-bar"
+                :class="{ peak: i === result.peakWeekday }"
+                :style="{ height: `${barH(count, result.byWeekday)}%` }"
+              />
+              <div class="wd-lbl">{{ weekdayShort[i] }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Top contacts with sent/received split -->
+        <div v-if="result.topContacts.length" class="section-card">
           <div class="section-title">
             <Icon name="mdi:account-heart-outline" size="18" />
             {{ $t("gramkit.wrapped.topContacts") }}
@@ -237,19 +295,47 @@
               <div class="contact-name">{{ c.name }}</div>
               <div class="contact-bar-wrap">
                 <div
-                  class="contact-bar"
+                  class="contact-bar contact-bar--sent"
                   :style="{
-                    width: `${(c.count / result.topContacts[0].count) * 100}%`,
+                    width: `${(c.sent / result.topContacts[0].count) * 100}%`,
+                  }"
+                />
+                <div
+                  class="contact-bar contact-bar--recv"
+                  :style="{
+                    width: `${(c.received / result.topContacts[0].count) * 100}%`,
                   }"
                 />
               </div>
               <div class="contact-count">{{ c.count }}</div>
             </div>
           </div>
+          <div class="contact-legend">
+            <span class="legend-dot sent" />{{ $t("gramkit.wrapped.sent") }}
+            <span class="legend-dot recv" />{{ $t("gramkit.wrapped.received") }}
+          </div>
+        </div>
+
+        <!-- Top emojis -->
+        <div v-if="result.topEmojis.length" class="section-card">
+          <div class="section-title">
+            <Icon name="mdi:emoticon-outline" size="18" />
+            {{ $t("gramkit.wrapped.topEmojis") }}
+          </div>
+          <div class="emoji-row">
+            <div
+              v-for="e in result.topEmojis"
+              :key="e.emoji"
+              class="emoji-chip"
+            >
+              <span class="emoji-glyph">{{ e.emoji }}</span>
+              <span class="emoji-count">{{ e.count }}</span>
+            </div>
+          </div>
         </div>
 
         <!-- Top words -->
-        <div class="section-card" v-if="result.topWords.length">
+        <div v-if="result.topWords.length" class="section-card">
           <div class="section-title">
             <Icon name="mdi:format-quote-close" size="18" />
             {{ $t("gramkit.wrapped.topWords") }}
@@ -270,8 +356,8 @@
 
         <!-- Most active day -->
         <div
-          class="insight-card insight-card--green"
           v-if="result.mostActiveDay"
+          class="insight-card insight-card--green"
         >
           <div class="insight-icon"><Icon name="mdi:fire" size="28" /></div>
           <div>
@@ -286,7 +372,7 @@
           </div>
         </div>
 
-        <!-- Personality badge -->
+        <!-- Personality -->
         <div class="personality-card">
           <div class="personality-icon">{{ result.personality.emoji }}</div>
           <div class="personality-title">{{ result.personality.title }}</div>
@@ -294,7 +380,6 @@
         </div>
       </div>
 
-      <!-- ── Empty prompt ── -->
       <SharedUiFeedbackEmptyState
         v-if="!result && !loading"
         icon="mdi:chart-timeline-variant-shimmer"
@@ -317,6 +402,17 @@ const loadingMsg = ref("");
 const result = ref(null);
 const period = ref(30);
 
+const weekdayNames = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+const weekdayShort = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
 const periods = computed(() => [
   { value: 7, label: t("gramkit.wrapped.period7") },
   { value: 30, label: t("gramkit.wrapped.period30") },
@@ -335,12 +431,10 @@ const loadingMsgs = computed(() => [
 ]);
 
 const formatHour = (h) => `${String(h).padStart(2, "0")}:00`;
-const barH = (count, arr) => {
-  const max = Math.max(...arr, 1);
-  return Math.max(4, Math.round((count / max) * 100));
-};
-const wordSize = (i) => Math.max(0.75, 1.4 - i * 0.06);
-const wordOpacity = (i) => Math.max(0.5, 1 - i * 0.04);
+const barH = (count, arr) =>
+  Math.max(4, Math.round((count / Math.max(...arr, 1)) * 100));
+const wordSize = (i) => Math.max(0.75, 1.4 - i * 0.05);
+const wordOpacity = (i) => Math.max(0.5, 1 - i * 0.03);
 
 const getPersonality = (data) => {
   if (data.peakHour >= 22 || data.peakHour < 4)
@@ -355,23 +449,41 @@ const getPersonality = (data) => {
       title: t("gramkit.wrapped.personality.earlyBird"),
       desc: t("gramkit.wrapped.personality.earlyBirdDesc"),
     };
-  if (data.totalSent > 500)
+  if (data.avgCharsPerMsg > 120)
     return {
-      emoji: "💬",
-      title: t("gramkit.wrapped.personality.chatterbox"),
-      desc: t("gramkit.wrapped.personality.chatterboxDesc"),
+      emoji: "✍️",
+      title: t("gramkit.wrapped.personality.novelist"),
+      desc: t("gramkit.wrapped.personality.novelistDesc"),
     };
-  if (data.mediaSent > data.totalSent * 0.3)
+  if (data.mediaSent > data.totalSent * 0.35)
     return {
       emoji: "📸",
       title: t("gramkit.wrapped.personality.visualStoryteller"),
       desc: t("gramkit.wrapped.personality.visualDesc"),
+    };
+  if (data.linksSent > 30)
+    return {
+      emoji: "🔗",
+      title: t("gramkit.wrapped.personality.curator"),
+      desc: t("gramkit.wrapped.personality.curatorDesc"),
+    };
+  if (data.totalSent > 600)
+    return {
+      emoji: "💬",
+      title: t("gramkit.wrapped.personality.chatterbox"),
+      desc: t("gramkit.wrapped.personality.chatterboxDesc"),
     };
   if (data.channelsRead > 30)
     return {
       emoji: "📰",
       title: t("gramkit.wrapped.personality.newsJunkie"),
       desc: t("gramkit.wrapped.personality.newsDesc"),
+    };
+  if (data.longestStreak >= 14)
+    return {
+      emoji: "🔥",
+      title: t("gramkit.wrapped.personality.consistent"),
+      desc: t("gramkit.wrapped.personality.consistentDesc"),
     };
   return {
     emoji: "🧘",
@@ -385,8 +497,15 @@ const generate = async () => {
   progress.value = 0;
   result.value = null;
   loadingMsg.value = loadingMsgs.value[0];
+
+  // Cycle loading messages while waiting
+  const msgInterval = setInterval(() => {
+    const idx = Math.floor(Math.random() * loadingMsgs.value.length);
+    loadingMsg.value = loadingMsgs.value[idx];
+    progress.value = Math.min(progress.value + 3, 90);
+  }, 2000);
+
   try {
-    // Poll progress via a single long request — server does all the work
     const data = await $fetch("/api/tg/wrapped/generate", {
       method: "POST",
       body: {
@@ -395,15 +514,7 @@ const generate = async () => {
         period: period.value,
         locale: locale.value,
       },
-      timeout: 120000,
-      onRequest() {
-        progress.value = 5;
-        loadingMsg.value = loadingMsgs.value[1];
-      },
-      onResponse() {
-        progress.value = 95;
-        loadingMsg.value = loadingMsgs.value[3];
-      },
+      timeout: 180000,
     });
     data.personality = getPersonality(data);
     progress.value = 100;
@@ -414,6 +525,7 @@ const generate = async () => {
       t("gramkit.toast.error") + ": " + (e.data?.message ?? e.message),
     );
   } finally {
+    clearInterval(msgInterval);
     loading.value = false;
   }
 };
@@ -431,8 +543,12 @@ const generate = async () => {
   justify-content: center;
   padding-top: 80px;
 }
+.ms-auto {
+    margin-left: 0 !important;
+  margin-inline-start: auto !important;
 
-/* ── Header ── */
+}
+
 .tool-header {
   display: flex;
   align-items: center;
@@ -486,7 +602,6 @@ const generate = async () => {
   margin: 0;
 }
 
-/* ── Period picker ── */
 .period-picker {
   display: flex;
   align-items: center;
@@ -521,8 +636,6 @@ const generate = async () => {
     color: #fff;
   }
 }
-
-/* ── Loading ── */
 .loading-wrap {
   padding: 40px 0;
   display: flex;
@@ -536,7 +649,7 @@ const generate = async () => {
   margin: 0;
 }
 
-/* ── Hero card ── */
+/* Hero */
 .hero-card {
   position: relative;
   border-radius: 20px;
@@ -595,12 +708,12 @@ const generate = async () => {
   color: var(--text-sub);
 }
 
-/* ── Wrapped grid ── */
+/* Primary grid */
 .wrapped-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
   @media (max-width: 600px) {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -656,9 +769,6 @@ const generate = async () => {
     transform: translateY(0);
   }
 }
-.wcard-icon {
-  opacity: 0.9;
-}
 .wcard-num {
   font-size: 1.8rem;
   font-weight: 800;
@@ -671,7 +781,56 @@ const generate = async () => {
   color: var(--text-sub);
 }
 
-/* ── Insight card ── */
+/* Secondary stats row */
+.secondary-stats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.sstat {
+  flex: 1;
+  min-width: 90px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  text-align: center;
+}
+.sstat-icon {
+  &.orange {
+    color: #f97316;
+  }
+  &.blue {
+    color: #2aabee;
+  }
+  &.purple {
+    color: #7c3aed;
+  }
+  &.teal {
+    color: #14b8a6;
+  }
+  &.green {
+    color: #16a34a;
+  }
+}
+.sstat-num {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1;
+}
+.sstat-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Insight */
 .insight-card {
   display: flex;
   align-items: center;
@@ -714,7 +873,7 @@ const generate = async () => {
   color: var(--text-sub);
 }
 
-/* ── Section card ── */
+/* Section card */
 .section-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
@@ -732,7 +891,7 @@ const generate = async () => {
   margin-bottom: 16px;
 }
 
-/* ── Hour chart ── */
+/* Hour chart */
 .hour-chart {
   display: flex;
   align-items: flex-end;
@@ -762,7 +921,38 @@ const generate = async () => {
   color: var(--text-muted);
 }
 
-/* ── Contact list ── */
+/* Weekday chart */
+.weekday-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 80px;
+}
+.wd-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  justify-content: flex-end;
+}
+.wd-bar {
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  background: var(--border-color);
+  transition: height 0.5s ease;
+  &.peak {
+    background: linear-gradient(180deg, #f97316, #f59e0b);
+  }
+}
+.wd-lbl {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Contacts */
 .contact-list {
   display: flex;
   flex-direction: column;
@@ -814,12 +1004,22 @@ const generate = async () => {
   background: var(--bg-elevated);
   border-radius: 4px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 .contact-bar {
-  height: 100%;
-  background: linear-gradient(90deg, #7c3aed, #2aabee);
-  border-radius: 4px;
+  border-radius: 2px;
   transition: width 0.6s ease;
+  min-height: 3px;
+  &--sent {
+    background: #7c3aed;
+    height: 4px;
+  }
+  &--recv {
+    background: #2aabee;
+    height: 4px;
+  }
 }
 .contact-count {
   font-size: 0.78rem;
@@ -829,8 +1029,55 @@ const generate = async () => {
   text-align: end;
   flex-shrink: 0;
 }
+.contact-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+  &.sent {
+    background: #7c3aed;
+  }
+  &.recv {
+    background: #2aabee;
+  }
+}
 
-/* ── Word cloud ── */
+/* Emojis */
+.emoji-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.emoji-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+.emoji-glyph {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+.emoji-count {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+/* Word cloud */
 .words-cloud {
   display: flex;
   flex-wrap: wrap;
@@ -845,14 +1092,13 @@ const generate = async () => {
   color: var(--text-primary);
   font-weight: 600;
   cursor: default;
-  transition: background 0.2s;
   &:hover {
     background: rgba(124, 58, 237, 0.1);
     border-color: rgba(124, 58, 237, 0.3);
   }
 }
 
-/* ── Personality card ── */
+/* Personality */
 .personality-card {
   background: linear-gradient(
     135deg,

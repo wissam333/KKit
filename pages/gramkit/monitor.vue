@@ -12,10 +12,11 @@
     </div>
 
     <template v-else>
+      <!-- ── Header ─────────────────────────────────────────── -->
       <div class="tool-header">
-        <NuxtLink to="/gramkit" class="back-btn"
-          ><Icon name="mdi:arrow-left" size="16"
-        /></NuxtLink>
+        <NuxtLink to="/gramkit" class="back-btn">
+          <Icon name="mdi:arrow-left" size="16" />
+        </NuxtLink>
         <div class="tool-header-icon orange">
           <Icon name="mdi:bell-ring-outline" size="22" />
         </div>
@@ -28,34 +29,47 @@
             v-if="!isRunning"
             icon-left="mdi:play"
             variant="success"
+            :disabled="!monitorKeywords.length"
             @click="startMonitor"
-            >{{ $t("gramkit.monitor.start") }}</SharedUiButtonBase
           >
+            {{ $t("gramkit.monitor.start") }}
+          </SharedUiButtonBase>
           <SharedUiButtonBase
             v-else
             icon-left="mdi:stop"
             variant="error"
             @click="stopMonitor"
-            >{{ $t("gramkit.monitor.stop") }}</SharedUiButtonBase
           >
+            {{ $t("gramkit.monitor.stop") }}
+          </SharedUiButtonBase>
         </div>
       </div>
 
-      <!-- Status bar -->
+      <!-- ── Status bar ─────────────────────────────────────── -->
       <div class="status-bar" :class="{ running: isRunning }">
         <div class="status-dot" />
         <span>{{
           isRunning ? $t("gramkit.monitor.running") : $t("gramkit.monitor.idle")
         }}</span>
-        <span v-if="isRunning" class="next-check"
-          >{{ $t("gramkit.monitor.nextCheck") }}: {{ countdown }}s</span
-        >
-        <span v-if="isRunning" class="check-count"
-          >{{ $t("gramkit.monitor.checks") }}: {{ checkCount }}</span
-        >
+        <span v-if="isRunning" class="status-pill">
+          <Icon name="mdi:timer-outline" size="12" />
+          {{ $t("gramkit.monitor.nextCheck") }}: {{ countdown }}s
+        </span>
+        <span v-if="isRunning" class="status-pill">
+          <Icon name="mdi:refresh" size="12" />
+          {{ $t("gramkit.monitor.checks") }}: {{ checkCount }}
+        </span>
+        <span v-if="isRunning" class="status-pill">
+          <Icon name="mdi:telegram" size="12" />
+          {{ $t("gramkit.monitor.channels") }}: {{ channelsSeen }}
+        </span>
+        <span v-if="alerts.length" class="status-pill alert-pill">
+          <Icon name="mdi:bell-outline" size="12" />
+          {{ alerts.length }}
+        </span>
       </div>
 
-      <!-- Settings -->
+      <!-- ── Settings card ──────────────────────────────────── -->
       <div class="settings-card">
         <div class="settings-row">
           <!-- Keywords -->
@@ -81,12 +95,13 @@
                 size="sm"
                 variant="outline"
                 @click="addKw"
-                >{{ $t("gramkit.monitor.add") }}</SharedUiButtonBase
               >
+                {{ $t("gramkit.monitor.add") }}
+              </SharedUiButtonBase>
             </div>
           </div>
 
-          <!-- Interval -->
+          <!-- Interval + limits -->
           <div class="field">
             <div class="field-label">{{ $t("gramkit.monitor.interval") }}</div>
             <div class="seg-control">
@@ -95,16 +110,67 @@
                 :key="opt.value"
                 class="seg-btn"
                 :class="{ active: interval === opt.value }"
+                :disabled="isRunning"
                 @click="interval = opt.value"
               >
                 {{ opt.label }}
               </button>
             </div>
+
+            <!-- Limits -->
+            <div class="limits-mini">
+              <div class="limit-mini-field">
+                <span class="limit-mini-label">
+                  <Icon name="mdi:antenna" size="12" />
+                  {{ $t("gramkit.monitor.channelLimit") }}
+                </span>
+                <div class="limit-stepper" :class="{ disabled: isRunning }">
+                  <button
+                    class="step-btn"
+                    :disabled="isRunning"
+                    @click="dialogLimit = Math.max(50, dialogLimit - 50)"
+                  >
+                    −
+                  </button>
+                  <span class="step-val">{{ dialogLimit }}</span>
+                  <button
+                    class="step-btn"
+                    :disabled="isRunning"
+                    @click="dialogLimit = Math.min(500, dialogLimit + 50)"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              <div class="limit-mini-field">
+                <span class="limit-mini-label">
+                  <Icon name="mdi:message-outline" size="12" />
+                  {{ $t("gramkit.monitor.msgLimit") }}
+                </span>
+                <div class="limit-stepper" :class="{ disabled: isRunning }">
+                  <button
+                    class="step-btn"
+                    :disabled="isRunning"
+                    @click="msgLimit = Math.max(5, msgLimit - 5)"
+                  >
+                    −
+                  </button>
+                  <span class="step-val">{{ msgLimit }}</span>
+                  <button
+                    class="step-btn"
+                    :disabled="isRunning"
+                    @click="msgLimit = Math.min(100, msgLimit + 5)"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Alerts -->
+      <!-- ── Alerts header ──────────────────────────────────── -->
       <div class="alerts-header">
         <span class="alerts-title">{{ $t("gramkit.monitor.alerts") }}</span>
         <button v-if="alerts.length" class="clear-btn" @click="alerts = []">
@@ -121,6 +187,7 @@
         size="md"
       />
 
+      <!-- ── Alert cards ────────────────────────────────────── -->
       <div class="alerts-list">
         <div
           v-for="alert in alerts"
@@ -162,15 +229,21 @@ const { locale, t } = useI18n();
 const { $toast } = useNuxtApp();
 const { isConnected, getSession, getCreds } = useTelegram();
 
+// ── State ────────────────────────────────────────────────────
 const isRunning = ref(false);
 const checkCount = ref(0);
+const channelsSeen = ref(0);
 const countdown = ref(0);
 const monitorKeywords = ref(["مطلوب", "وظيفة", "vacancy", "hiring"]);
 const newKw = ref("");
 const interval = ref(120);
+const dialogLimit = ref(200);
+const msgLimit = ref(20);
 const alerts = ref([]);
+
 let timer = null;
 let countdownTimer = null;
+// seenIds lives only in memory — never sent back in full, only delta is returned
 let seenIds = new Set();
 let alertId = 0;
 
@@ -181,6 +254,7 @@ const intervalOptions = [
   { value: 600, label: "10m" },
 ];
 
+// ── Keywords ─────────────────────────────────────────────────
 const addKw = () => {
   const kw = newKw.value.trim();
   if (kw && !monitorKeywords.value.includes(kw)) monitorKeywords.value.push(kw);
@@ -190,6 +264,7 @@ const removeKw = (kw) => {
   monitorKeywords.value = monitorKeywords.value.filter((k) => k !== kw);
 };
 
+// ── Check ────────────────────────────────────────────────────
 const runCheck = async () => {
   try {
     const result = await $fetch("/api/tg/monitor/check", {
@@ -198,34 +273,60 @@ const runCheck = async () => {
         ...getCreds(),
         session: getSession(),
         keywords: monitorKeywords.value,
-        lookbackSeconds: interval.value * 2,
+        lookbackSeconds: interval.value * 2, // always look back 2× the interval
+        dialogLimit: dialogLimit.value,
+        msgLimit: msgLimit.value,
+        // Send only the IDs we've accumulated — server returns only NEW ones
         seenIds: [...seenIds],
         locale: locale.value,
       },
     });
+
+    // Merge the delta returned by the server into our local set
+    for (const id of result.newSeenIds ?? []) seenIds.add(id);
+
+    // Cap seenIds size to avoid memory creep on long runs (keep newest 5000)
+    if (seenIds.size > 5000) {
+      const arr = [...seenIds];
+      seenIds = new Set(arr.slice(arr.length - 5000));
+    }
+
     for (const hit of result.hits) {
-      seenIds.add(hit.msgKey);
-      alerts.value.unshift({ id: alertId++, ...hit, isNew: true });
+      const newAlert = { id: alertId++, ...hit, isNew: true };
+      alerts.value.unshift(newAlert);
       $toast.success(`🔔 ${hit.channel}: ${hit.keywords.join(", ")}`);
+      // Remove "new" highlight after 3s
       setTimeout(() => {
-        if (alerts.value[0]) alerts.value[0].isNew = false;
+        newAlert.isNew = false;
       }, 3000);
     }
+
     checkCount.value++;
+    // Track how many distinct channels we've actually scanned so far
+    channelsSeen.value = seenIds.size
+      ? new Set([...seenIds].map((k) => k.split("_")[0])).size
+      : 0;
   } catch {
-    /* silent */
+    /* silent — monitor keeps running */
   }
 };
 
+// ── Start / stop ─────────────────────────────────────────────
 const startMonitor = async () => {
   if (!monitorKeywords.value.length) {
     $toast.error(t("gramkit.monitor.noKeywords"));
     return;
   }
   isRunning.value = true;
+  checkCount.value = 0;
+  channelsSeen.value = 0;
   seenIds = new Set();
+  alerts.value = [];
+
   await runCheck();
+
   timer = setInterval(runCheck, interval.value * 1000);
+
   countdown.value = interval.value;
   countdownTimer = setInterval(() => {
     countdown.value--;
@@ -237,15 +338,18 @@ const stopMonitor = () => {
   isRunning.value = false;
   clearInterval(timer);
   clearInterval(countdownTimer);
+  timer = null;
+  countdownTimer = null;
 };
 
-const truncate = (text, max) =>
-  text?.length > max ? text.slice(0, max) + "…" : text;
-
+// ── Cleanup on unmount ────────────────────────────────────────
 onUnmounted(() => {
   clearInterval(timer);
   clearInterval(countdownTimer);
 });
+
+const truncate = (text, max) =>
+  text?.length > max ? text.slice(0, max) + "…" : text;
 </script>
 
 <style scoped lang="scss">
@@ -260,6 +364,8 @@ onUnmounted(() => {
   justify-content: center;
   padding-top: 80px;
 }
+
+/* ─── Header ─────────────────────────────────────────────────── */
 .tool-header {
   display: flex;
   align-items: center;
@@ -312,19 +418,22 @@ onUnmounted(() => {
   margin-inline-start: auto;
 }
 
-/* Status bar */
+/* ─── Status bar ─────────────────────────────────────────────── */
 .status-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  padding: 12px 16px;
+  padding: 10px 14px;
   margin-bottom: 16px;
-  font-size: 0.85rem;
+  font-size: 0.83rem;
   color: var(--text-sub);
+  transition:
+    border-color 0.3s,
+    background 0.3s;
   &.running {
     border-color: rgba(34, 197, 94, 0.4);
     background: rgba(34, 197, 94, 0.04);
@@ -352,15 +461,21 @@ onUnmounted(() => {
     box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.05);
   }
 }
-.next-check,
-.check-count {
-  font-size: 0.78rem;
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
   padding: 2px 8px;
   background: rgba(34, 197, 94, 0.1);
   border-radius: 6px;
+  &.alert-pill {
+    background: rgba(249, 115, 22, 0.12);
+    color: #f97316;
+  }
 }
 
-/* Settings card */
+/* ─── Settings card ──────────────────────────────────────────── */
 .settings-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
@@ -442,9 +557,76 @@ onUnmounted(() => {
     background: #f97316;
     color: #fff;
   }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
-/* Alerts */
+/* ─── Limits mini row ────────────────────────────────────────── */
+.limits-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+.limit-mini-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.limit-mini-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex: 1;
+}
+.limit-stepper {
+  display: flex;
+  align-items: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  overflow: hidden;
+  &.disabled {
+    opacity: 0.45;
+    pointer-events: none;
+  }
+}
+.step-btn {
+  width: 26px;
+  height: 26px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  &:hover:not(:disabled) {
+    background: var(--border-color);
+    color: var(--text-primary);
+  }
+  &:disabled {
+    cursor: not-allowed;
+  }
+}
+.step-val {
+  min-width: 36px;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Alerts ─────────────────────────────────────────────────── */
 .alerts-header {
   display: flex;
   align-items: center;

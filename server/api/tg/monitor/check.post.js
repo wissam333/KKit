@@ -1,3 +1,4 @@
+// server/api/tg/monitor/check.post.js
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
 
@@ -7,10 +8,13 @@ export default defineEventHandler(async (event) => {
     apiHash,
     session,
     keywords,
-    lookbackSeconds,
-    seenIds,
+    lookbackSeconds = 240,
+    dialogLimit = 200, // how many channels to load
+    msgLimit = 20, // messages per channel per check
+    seenIds = [],
     locale,
   } = await readBody(event);
+
   const client = new TelegramClient(
     new StringSession(session),
     parseInt(apiId),
@@ -18,19 +22,36 @@ export default defineEventHandler(async (event) => {
     { connectionRetries: 3 },
   );
   await client.connect();
+
   try {
     const cutoff = new Date(Date.now() - lookbackSeconds * 1000);
-    const dialogs = await client.getDialogs({ limit: 200 });
+    const dlLimit = Math.min(Math.max(parseInt(dialogLimit), 10), 500);
+    const mLimit = Math.min(Math.max(parseInt(msgLimit), 5), 100);
+
+    const allDialogs = await client.getDialogs({ limit: dlLimit });
+
+    // Channels only — consistent with jobs and analytics tools
+    const channels = allDialogs.filter((d) => d.isChannel && !d.isGroup);
+
     const hits = [];
-    const seenSet = new Set(seenIds ?? []);
-    for (const ch of dialogs) {
+    const seenSet = new Set(seenIds);
+    // Track only IDs found this run to return as the new delta
+    const newSeenIds = [];
+
+    for (const ch of channels) {
       try {
-        const msgs = await client.getMessages(ch.entity, { limit: 20 });
+        const msgs = await client.getMessages(ch.entity, { limit: mLimit });
         for (const msg of msgs) {
           if (!msg.message) continue;
-          if (new Date(msg.date * 1000) < cutoff) continue;
+
+          const msgTime = new Date(msg.date * 1000);
+          if (msgTime < cutoff) continue;
+
           const msgKey = `${ch.id}_${msg.id}`;
           if (seenSet.has(msgKey)) continue;
+
+          newSeenIds.push(msgKey);
+
           const lower = msg.message.toLowerCase();
           const matched = keywords.filter((kw) =>
             lower.includes(kw.toLowerCase()),
@@ -40,7 +61,7 @@ export default defineEventHandler(async (event) => {
               msgKey,
               channel: ch.title,
               text: msg.message,
-              time: new Date(msg.date * 1000).toLocaleString(
+              time: msgTime.toLocaleString(
                 locale === "ar" ? "ar-EG" : "en-GB",
                 {
                   month: "short",
@@ -57,11 +78,13 @@ export default defineEventHandler(async (event) => {
           }
         }
       } catch {
-        /* skip */
+        /* skip inaccessible channel */
       }
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 150));
     }
-    return { hits };
+
+    // Return only the NEW ids seen this run — client merges them in
+    return { hits, newSeenIds };
   } finally {
     await client.disconnect();
   }

@@ -12,10 +12,11 @@
     </div>
 
     <template v-else>
+      <!-- ── Header ─────────────────────────────────────────── -->
       <div class="tool-header">
-        <NuxtLink to="/gramkit" class="back-btn"
-          ><Icon name="mdi:arrow-left" size="15"
-        /></NuxtLink>
+        <NuxtLink to="/gramkit" class="back-btn">
+          <Icon name="mdi:arrow-left" size="15" />
+        </NuxtLink>
         <div class="tool-header-icon blue">
           <Icon name="mdi:briefcase-search-outline" size="20" />
         </div>
@@ -37,16 +38,64 @@
           </div>
           <SharedUiButtonBase
             :loading="scanning"
-            icon-left="mdi:refresh"
+            :icon-left="scanning ? 'mdi:stop' : 'mdi:refresh'"
             variant="outline"
             size="sm"
-            @click="scanJobs"
+            @click="toggleScan"
           >
-            {{ $t("gramkit.jobs.scan") }}
+            {{ scanning ? $t("gramkit.jobs.stop") : $t("gramkit.jobs.scan") }}
           </SharedUiButtonBase>
         </div>
       </div>
 
+      <!-- ── Limits row ─────────────────────────────────────── -->
+      <div class="limits-row">
+        <div class="limit-field">
+          <label class="limit-label">
+            <Icon name="mdi:antenna" size="13" />
+            {{ $t("gramkit.jobs.limits.channels") }}
+          </label>
+          <div class="limit-stepper">
+            <button
+              class="step-btn"
+              @click="dialogLimit = Math.max(50, dialogLimit - 50)"
+            >
+              −
+            </button>
+            <span class="step-val">{{ dialogLimit }}</span>
+            <button
+              class="step-btn"
+              @click="dialogLimit = Math.min(500, dialogLimit + 50)"
+            >
+              +
+            </button>
+          </div>
+        </div>
+        <div class="limit-sep" />
+        <div class="limit-field">
+          <label class="limit-label">
+            <Icon name="mdi:message-text-outline" size="13" />
+            {{ $t("gramkit.jobs.limits.messages") }}
+          </label>
+          <div class="limit-stepper">
+            <button
+              class="step-btn"
+              @click="msgLimit = Math.max(10, msgLimit - 10)"
+            >
+              −
+            </button>
+            <span class="step-val">{{ msgLimit }}</span>
+            <button
+              class="step-btn"
+              @click="msgLimit = Math.min(500, msgLimit + 10)"
+            >
+              +
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Real-time progress ─────────────────────────────── -->
       <div v-if="scanning" class="scan-progress">
         <SharedUiIndicatorsProgress
           type="linear"
@@ -55,13 +104,15 @@
           :show-value="true"
           size="sm"
         />
-        <span class="scan-label"
-          >{{ $t("gramkit.jobs.scanning") }} {{ scanDone }}/{{
-            scanTotal
-          }}</span
-        >
+        <span class="scan-label">
+          {{ $t("gramkit.jobs.scanning") }} {{ scanDone }}/{{ scanTotal }}
+          &nbsp;·&nbsp;
+          <Icon name="mdi:telegram" size="11" />
+          {{ $t("gramkit.jobs.channelsOnly") }}
+        </span>
       </div>
 
+      <!-- ── Stats ──────────────────────────────────────────── -->
       <SharedUiCardsStats
         v-if="!scanning && jobs.length"
         :stats="statsCards"
@@ -69,7 +120,7 @@
         :icon-size="22"
       />
 
-      <!-- Keyword filter -->
+      <!-- ── Keyword filter chips ───────────────────────────── -->
       <div v-if="jobs.length" class="kw-filter-bar">
         <span class="kw-label">{{ $t("gramkit.jobs.filter") }}:</span>
         <div class="kw-chips">
@@ -85,7 +136,7 @@
         </div>
       </div>
 
-      <!-- Keyword manager -->
+      <!-- ── Keyword manager ────────────────────────────────── -->
       <div class="kw-manager">
         <div class="kw-tags">
           <span v-for="kw in keywords" :key="kw" class="kw-tag">
@@ -107,11 +158,13 @@
             size="sm"
             variant="outline"
             @click="addKeyword"
-            >{{ $t("gramkit.jobs.addKeyword") }}</SharedUiButtonBase
           >
+            {{ $t("gramkit.jobs.addKeyword") }}
+          </SharedUiButtonBase>
         </div>
       </div>
 
+      <!-- ── Empty state ────────────────────────────────────── -->
       <SharedUiFeedbackEmptyState
         v-if="!scanning && !filteredJobs.length"
         icon="mdi:briefcase-search-outline"
@@ -119,25 +172,25 @@
         description="gramkit.jobs.emptyDesc"
         action-label="gramkit.jobs.scan"
         action-icon="mdi:refresh"
-        :action-handler="scanJobs"
+        :action-handler="toggleScan"
         size="lg"
       />
 
-      <!-- Job cards -->
-      <div v-else-if="!scanning" class="jobs-grid">
+      <!-- ── Job cards (stream in live) ────────────────────── -->
+      <div v-else-if="filteredJobs.length" class="jobs-grid">
         <div
           v-for="(job, i) in filteredJobs"
           :key="job.id"
           class="job-card"
-          :style="{ animationDelay: `${i * 30}ms` }"
+          :style="{ animationDelay: `${Math.min(i, 20) * 30}ms` }"
         >
           <div class="jc-head">
-            <span class="ch-badge"
-              ><Icon name="mdi:telegram" size="11" />{{ job.channel }}</span
-            >
-            <span class="jc-time"
-              ><Icon name="mdi:clock-outline" size="11" />{{ job.time }}</span
-            >
+            <span class="ch-badge">
+              <Icon name="mdi:telegram" size="11" />{{ job.channel }}
+            </span>
+            <span class="jc-time">
+              <Icon name="mdi:clock-outline" size="11" />{{ job.time }}
+            </span>
           </div>
           <p class="jc-text">{{ truncate(job.text, 280) }}</p>
           <div class="jc-kws">
@@ -146,11 +199,11 @@
             }}</span>
           </div>
           <div class="jc-foot">
-            <a v-if="job.link" :href="job.link" target="_blank" class="jc-open"
-              ><Icon name="mdi:open-in-new" size="12" />{{
+            <a v-if="job.link" :href="job.link" target="_blank" class="jc-open">
+              <Icon name="mdi:open-in-new" size="12" />{{
                 $t("gramkit.jobs.open")
-              }}</a
-            >
+              }}
+            </a>
             <button class="jc-action-btn" @click="copyText(job.text)">
               <Icon name="mdi:content-copy" size="12" />{{
                 $t("gramkit.jobs.copy")
@@ -179,8 +232,8 @@
         </div>
       </div>
 
-      <!-- Skeleton -->
-      <div v-if="scanning" class="jobs-grid">
+      <!-- ── Skeleton (only before first result arrives) ────── -->
+      <div v-if="scanning && !jobs.length" class="jobs-grid">
         <div v-for="n in 6" :key="n" class="skeleton-card">
           <div class="sk sk-s" />
           <div class="sk sk-l" />
@@ -194,8 +247,9 @@
 <script setup>
 const { locale, t } = useI18n();
 const { $toast } = useNuxtApp();
-const { isConnected, getSession, getCreds } = useTelegram();
+const { isConnected, scanJobsStream } = useTelegram();
 
+// ── Range selector ───────────────────────────────────────────
 const searchDays = ref(0);
 const rangeOptions = computed(() => [
   { value: 0, label: t("gramkit.range.today") },
@@ -204,6 +258,11 @@ const rangeOptions = computed(() => [
   { value: 30, label: t("gramkit.range.30days") },
 ]);
 
+// ── Limits (editable from UI) ────────────────────────────────
+const dialogLimit = ref(300); // channels to load
+const msgLimit = ref(100); // messages per channel
+
+// ── Keywords ─────────────────────────────────────────────────
 const keywords = ref(["مطلوب", "وظيفة", "تعيين", "vacancy", "hiring", "job"]);
 const activeKeywords = ref([...keywords.value]);
 const newKeyword = ref("");
@@ -226,13 +285,26 @@ const toggleKw = (kw) => {
     : activeKeywords.value.push(kw);
 };
 
+// ── Scan state ───────────────────────────────────────────────
 const scanning = ref(false);
 const scanProgress = ref(0);
 const scanDone = ref(0);
 const scanTotal = ref(0);
 const jobs = ref([]);
-const savedIds = ref(JSON.parse(localStorage.getItem("gk_saved_ids") ?? "[]"));
+let cancelScan = null;
 
+// ── SSR-safe localStorage ────────────────────────────────────
+const savedIds = ref([]);
+onMounted(() => {
+  try {
+    savedIds.value = JSON.parse(localStorage.getItem("gk_saved_ids") ?? "[]");
+  } catch {
+    savedIds.value = [];
+  }
+});
+onBeforeUnmount(() => cancelScan?.());
+
+// ── Derived ──────────────────────────────────────────────────
 const filteredJobs = computed(() =>
   !activeKeywords.value.length
     ? jobs.value
@@ -267,35 +339,54 @@ const statsCards = computed(() => [
   },
 ]);
 
-const scanJobs = async () => {
+// ── Start / stop ─────────────────────────────────────────────
+const toggleScan = () => {
+  if (scanning.value) {
+    cancelScan?.();
+    scanning.value = false;
+    return;
+  }
+
   scanning.value = true;
   scanProgress.value = 0;
   scanDone.value = 0;
+  scanTotal.value = 0;
   jobs.value = [];
-  try {
-    const result = await $fetch("/api/tg/jobs/scan", {
-      method: "POST",
-      body: {
-        ...getCreds(),
-        session: getSession(),
-        searchDays: searchDays.value,
-        keywords: keywords.value,
-        locale: locale.value,
-      },
-    });
-    jobs.value = result.jobs;
-    scanProgress.value = 100;
-    scanDone.value = result.scanned;
-    scanTotal.value = result.scanned;
-    if (!jobs.value.length) $toast.info(t("gramkit.toast.noJobs"));
-    else $toast.success(`${jobs.value.length} ${t("gramkit.toast.jobsFound")}`);
-  } catch {
-    $toast.error(t("gramkit.toast.error"));
-  } finally {
-    scanning.value = false;
-  }
+
+  cancelScan = scanJobsStream({
+    searchDays: searchDays.value,
+    keywords: keywords.value,
+    locale: locale.value,
+    dialogLimit: dialogLimit.value,
+    msgLimit: msgLimit.value,
+
+    onTotal(total) {
+      scanTotal.value = total;
+    },
+    onJob(job) {
+      jobs.value.push(job);
+    },
+    onProgress(scanned, total) {
+      scanDone.value = scanned;
+      scanTotal.value = total;
+      scanProgress.value = total ? Math.round((scanned / total) * 100) : 0;
+    },
+    onDone(scanned) {
+      scanning.value = false;
+      scanProgress.value = 100;
+      scanDone.value = scanned;
+      if (!jobs.value.length) $toast.info(t("gramkit.toast.noJobs"));
+      else
+        $toast.success(`${jobs.value.length} ${t("gramkit.toast.jobsFound")}`);
+    },
+    onError(message) {
+      scanning.value = false;
+      $toast.error(message || t("gramkit.toast.error"));
+    },
+  });
 };
 
+// ── Helpers ──────────────────────────────────────────────────
 const copyText = async (text) => {
   await navigator.clipboard.writeText(text);
   $toast.success(t("gramkit.toast.copied"));
@@ -308,14 +399,9 @@ const saveJob = (job) => {
 };
 const truncate = (text, max) =>
   text?.length > max ? text.slice(0, max) + "…" : text;
-
-onMounted(() => {
-  if (isConnected.value) scanJobs();
-});
 </script>
 
 <style scoped lang="scss">
-/* ─── Shared base ──────── import from partial in real project ── */
 .tool-page {
   max-width: 1100px;
   margin: 0 auto;
@@ -333,11 +419,13 @@ onMounted(() => {
   justify-content: center;
   padding-top: 60px;
 }
+
+/* ─── Header ────────────────────────────────────────────────── */
 .tool-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 22px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
 }
 .back-btn {
@@ -399,6 +487,112 @@ onMounted(() => {
   margin-inline-start: auto;
   flex-wrap: wrap;
 }
+
+/* ─── Limits row ─────────────────────────────────────────────── */
+.limits-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.limit-sep {
+  width: 1px;
+  height: 28px;
+  background: var(--border-color);
+  flex-shrink: 0;
+  @media (max-width: 480px) {
+    display: none;
+  }
+}
+.limit-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 160px;
+}
+.limit-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: default;
+}
+.limit-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-inline-start: auto;
+}
+.step-btn {
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  &:hover {
+    background: var(--border-color);
+    color: var(--text-primary);
+  }
+}
+.step-val {
+  min-width: 40px;
+  text-align: center;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Range switch ───────────────────────────────────────────── */
+.range-switch {
+  display: flex;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.seg-btn {
+  padding: 7px 10px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  font-family: "Tajawal", sans-serif;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.18s;
+  white-space: nowrap;
+  &.active {
+    background: #2aabee;
+    color: #fff;
+  }
+  @media (max-width: 360px) {
+    padding: 6px 7px;
+    font-size: 0.7rem;
+  }
+}
+
+/* ─── Progress ───────────────────────────────────────────────── */
 .scan-progress {
   margin-bottom: 16px;
   display: flex;
@@ -406,8 +600,60 @@ onMounted(() => {
   gap: 5px;
 }
 .scan-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 0.76rem;
   color: var(--text-muted);
+}
+
+/* ─── Keyword filter bar ─────────────────────────────────────── */
+.kw-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.kw-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.kw-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.kw-chip {
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  font-family: "Tajawal", sans-serif;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.18s;
+  &.active {
+    background: #2aabee;
+    border-color: #2aabee;
+    color: #fff;
+  }
+}
+
+/* ─── Keyword manager ────────────────────────────────────────── */
+.kw-manager {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 13px;
+  padding: 13px;
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
 }
 .kw-tags {
   display: flex;
@@ -444,95 +690,11 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
-/* ─── Range switch ───────────────────────────────────────────── */
-.range-switch {
-  display: flex;
-  background: var(--bg-surface);
-  border: 1.5px solid var(--border-color);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.seg-btn {
-  padding: 7px 10px;
-  font-size: 0.74rem;
-  font-weight: 600;
-  font-family: "Tajawal", sans-serif;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--text-muted);
-  transition: all 0.18s;
-  white-space: nowrap;
-  &.active {
-    background: #2aabee;
-    color: #fff;
-  }
-
-  @media (max-width: 360px) {
-    padding: 6px 7px;
-    font-size: 0.7rem;
-  }
-}
-
-/* ─── Keyword filter bar ─────────────────────────────────────── */
-.kw-filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 14px;
-}
-
-.kw-label {
-  font-size: 0.76rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.kw-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.kw-chip {
-  padding: 3px 10px;
-  border-radius: 20px;
-  font-size: 0.74rem;
-  font-weight: 600;
-  font-family: "Tajawal", sans-serif;
-  background: var(--bg-surface);
-  border: 1.5px solid var(--border-color);
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.18s;
-  &.active {
-    background: #2aabee;
-    border-color: #2aabee;
-    color: #fff;
-  }
-}
-
-/* ─── Keyword manager ────────────────────────────────────────── */
-.kw-manager {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: 13px;
-  padding: 13px;
-  margin-bottom: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-
 /* ─── Jobs grid ──────────────────────────────────────────────── */
 .jobs-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 12px;
-
   @media (max-width: 560px) {
     grid-template-columns: 1fr;
     gap: 9px;
@@ -557,7 +719,6 @@ onMounted(() => {
     transform: translateY(-2px);
   }
 }
-
 @keyframes card-in {
   from {
     opacity: 0;
@@ -568,14 +729,12 @@ onMounted(() => {
     transform: translateY(0);
   }
 }
-
 .jc-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
 }
-
 .ch-badge {
   display: inline-flex;
   align-items: center;
@@ -591,7 +750,6 @@ onMounted(() => {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-
 .jc-time {
   display: flex;
   align-items: center;
@@ -599,7 +757,6 @@ onMounted(() => {
   font-size: 0.7rem;
   color: var(--text-muted);
 }
-
 .jc-text {
   font-size: 0.84rem;
   color: var(--text-primary);
@@ -608,13 +765,11 @@ onMounted(() => {
   white-space: pre-wrap;
   word-break: break-word;
 }
-
 .jc-kws {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
 }
-
 .mk {
   padding: 2px 7px;
   background: rgba(211, 47, 47, 0.08);
@@ -623,7 +778,6 @@ onMounted(() => {
   font-size: 0.69rem;
   font-weight: 600;
 }
-
 .jc-foot {
   display: flex;
   gap: 5px;
@@ -632,7 +786,6 @@ onMounted(() => {
   margin-top: auto;
   flex-wrap: wrap;
 }
-
 .jc-open {
   display: inline-flex;
   align-items: center;
@@ -648,7 +801,6 @@ onMounted(() => {
     opacity: 0.87;
   }
 }
-
 .jc-action-btn {
   display: inline-flex;
   align-items: center;
@@ -681,7 +833,6 @@ onMounted(() => {
   flex-direction: column;
   gap: 9px;
 }
-
 .sk {
   height: 10px;
   border-radius: 5px;
@@ -694,7 +845,6 @@ onMounted(() => {
   background-size: 200% 100%;
   animation: shimmer 1.3s infinite;
 }
-
 .sk-s {
   width: 36%;
 }
@@ -705,7 +855,6 @@ onMounted(() => {
   width: 100%;
   height: 34px;
 }
-
 @keyframes shimmer {
   0% {
     background-position: 200% 0;

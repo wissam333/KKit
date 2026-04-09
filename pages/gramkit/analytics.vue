@@ -12,11 +12,11 @@
     </div>
 
     <template v-else>
-      <!-- Header -->
+      <!-- ── Header ─────────────────────────────────────────── -->
       <div class="tool-header">
-        <NuxtLink to="/gramkit" class="back-btn"
-          ><Icon name="mdi:arrow-left" size="16"
-        /></NuxtLink>
+        <NuxtLink to="/gramkit" class="back-btn">
+          <Icon name="mdi:arrow-left" size="16" />
+        </NuxtLink>
         <div class="tool-header-icon purple">
           <Icon name="mdi:chart-bar" size="22" />
         </div>
@@ -26,7 +26,7 @@
         </div>
       </div>
 
-      <!-- Channel picker -->
+      <!-- ── Channel picker ─────────────────────────────────── -->
       <div class="picker-row">
         <SharedUiFormBaseSelect
           v-model="selectedChannel"
@@ -42,29 +42,77 @@
           :disabled="!selectedChannel"
           icon-left="mdi:chart-bar"
           @click="runAnalysis"
-          >{{ $t("gramkit.analytics.analyze") }}</SharedUiButtonBase
         >
+          {{ $t("gramkit.analytics.analyze") }}
+        </SharedUiButtonBase>
       </div>
 
-      <!-- Loading -->
+      <!-- ── Controls row ───────────────────────────────────── -->
+      <div class="controls-row">
+        <!-- Date range -->
+        <div class="control-group">
+          <span class="ctrl-label">
+            <Icon name="mdi:calendar-range" size="13" />
+            {{ $t("gramkit.analytics.range") }}
+          </span>
+          <div class="range-switch">
+            <button
+              v-for="opt in rangeOptions"
+              :key="opt.value"
+              class="seg-btn"
+              :class="{ active: searchDays === opt.value }"
+              @click="searchDays = opt.value"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+        </div>
+
+        <div class="ctrl-sep" />
+
+        <!-- Message limit -->
+        <div class="control-group">
+          <span class="ctrl-label">
+            <Icon name="mdi:message-text-outline" size="13" />
+            {{ $t("gramkit.analytics.msgLimit") }}
+          </span>
+          <div class="limit-stepper">
+            <button
+              class="step-btn"
+              @click="msgLimit = Math.max(50, msgLimit - 50)"
+            >
+              −
+            </button>
+            <span class="step-val">{{ msgLimit }}</span>
+            <button
+              class="step-btn"
+              @click="msgLimit = Math.min(1000, msgLimit + 50)"
+            >
+              +
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Loading ────────────────────────────────────────── -->
       <div v-if="analyzing" class="analyze-loading">
         <SharedUiIndicatorsProgress type="spinner" color="primary" size="md" />
         <span>{{ $t("gramkit.analytics.loading") }}</span>
       </div>
 
-      <!-- Results -->
+      <!-- ── Results ────────────────────────────────────────── -->
       <template v-if="result && !analyzing">
         <!-- Stats cards -->
         <SharedUiCardsStats :stats="statCards" :columns="3" :icon-size="24" />
 
-        <!-- Peak hour -->
+        <!-- Peak hour banner -->
         <div class="peak-banner">
           <Icon name="mdi:clock-fast" size="20" />
           {{ $t("gramkit.analytics.peakHour") }}:
           <strong>{{ peakLabel }}</strong>
         </div>
 
-        <!-- Hour chart -->
+        <!-- Hour activity chart -->
         <div class="chart-card">
           <div class="chart-title">
             {{ $t("gramkit.analytics.activityByHour") }}
@@ -82,6 +130,27 @@
                 :class="{ peak: h === result.peakHour }"
               />
               <div class="hour-label">{{ h % 3 === 0 ? h : "" }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Daily activity chart -->
+        <div v-if="result.dailyActivity?.length > 1" class="chart-card">
+          <div class="chart-title">
+            {{ $t("gramkit.analytics.activityByDay") }}
+          </div>
+          <div class="day-chart">
+            <div
+              v-for="d in result.dailyActivity"
+              :key="d.date"
+              class="day-bar-wrap"
+              :title="`${d.date} — ${d.count} msgs`"
+            >
+              <div
+                class="day-bar"
+                :style="{ height: `${dayBarHeight(d.count)}%` }"
+              />
+              <div class="day-label">{{ shortDate(d.date) }}</div>
             </div>
           </div>
         </div>
@@ -111,7 +180,7 @@
         </div>
       </template>
 
-      <!-- Empty state -->
+      <!-- ── Empty state ────────────────────────────────────── -->
       <SharedUiFeedbackEmptyState
         v-if="!result && !analyzing"
         icon="mdi:chart-bar"
@@ -128,20 +197,35 @@ const { locale, t } = useI18n();
 const { $toast } = useNuxtApp();
 const { isConnected, getSession, getCreds } = useTelegram();
 
+// ── Picker ───────────────────────────────────────────────────
 const selectedChannel = ref(null);
 const loadingDialogs = ref(false);
-const analyzing = ref(false);
-const result = ref(null);
 const dialogs = ref([]);
 
 const channelOptions = computed(() =>
   dialogs.value.map((d) => ({
     label: d.title,
-    value: d.id?.toString(),
-    icon: d.isChannel ? "mdi:bullhorn-outline" : "mdi:account-group-outline",
+    value: d.id,
+    icon: "mdi:bullhorn-outline",
   })),
 );
 
+// ── Controls ─────────────────────────────────────────────────
+const searchDays = ref(0);
+const msgLimit = ref(200);
+
+const rangeOptions = computed(() => [
+  { value: 0, label: t("gramkit.range.all") },
+  { value: 7, label: t("gramkit.range.7days") },
+  { value: 30, label: t("gramkit.range.30days") },
+  { value: 90, label: t("gramkit.range.90days") },
+]);
+
+// ── Analysis state ───────────────────────────────────────────
+const analyzing = ref(false);
+const result = ref(null);
+
+// ── Derived ──────────────────────────────────────────────────
 const statCards = computed(() =>
   !result.value
     ? []
@@ -176,17 +260,35 @@ const peakLabel = computed(() => {
   return `${String(h).padStart(2, "0")}:00 – ${String(h + 1).padStart(2, "0")}:00`;
 });
 
-const maxCount = computed(() =>
+const maxHourCount = computed(() =>
   result.value ? Math.max(...result.value.byHour, 1) : 1,
 );
 const barHeight = (count) =>
-  Math.max(4, Math.round((count / maxCount.value) * 100));
+  Math.max(4, Math.round((count / maxHourCount.value) * 100));
 
+const maxDayCount = computed(() =>
+  result.value?.dailyActivity?.length
+    ? Math.max(...result.value.dailyActivity.map((d) => d.count), 1)
+    : 1,
+);
+const dayBarHeight = (count) =>
+  Math.max(4, Math.round((count / maxDayCount.value) * 100));
+
+// Show only first 3 chars of date (e.g. "Apr 3" → "Apr")
+const shortDate = (iso) => {
+  const d = new Date(iso);
+  return d.toLocaleDateString(locale.value === "ar" ? "ar-EG" : "en-GB", {
+    month: "short",
+    day: "numeric",
+  });
+};
+
+// ── Load dialogs on mount ─────────────────────────────────────
 onMounted(async () => {
   if (!isConnected.value) return;
   loadingDialogs.value = true;
   try {
-    dialogs.value = await $fetch("/api/tg/dialogs", {
+    dialogs.value = await $fetch("/api/tg/analytics/dialogs", {
       method: "POST",
       body: { ...getCreds(), session: getSession() },
     });
@@ -197,17 +299,20 @@ onMounted(async () => {
   }
 });
 
+// ── Run analysis ──────────────────────────────────────────────
 const runAnalysis = async () => {
   if (!selectedChannel.value) return;
   analyzing.value = true;
   result.value = null;
   try {
-    result.value = await $fetch("/api/tg/analyzeChannel", {
+    result.value = await $fetch("/api/tg/analytics/analyzeChannel", {
       method: "POST",
       body: {
         ...getCreds(),
         session: getSession(),
         channelId: selectedChannel.value,
+        msgLimit: msgLimit.value,
+        searchDays: searchDays.value,
       },
     });
   } catch {
@@ -230,12 +335,14 @@ const runAnalysis = async () => {
   justify-content: center;
   padding-top: 80px;
 }
+
+/* ─── Header ─────────────────────────────────────────────────── */
 .tool-header {
   display: flex;
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 .back-btn {
   width: 36px;
@@ -279,11 +386,12 @@ const runAnalysis = async () => {
   margin: 0;
 }
 
+/* ─── Picker row ─────────────────────────────────────────────── */
 .picker-row {
   display: flex;
   gap: 10px;
   align-items: flex-end;
-  margin-bottom: 24px;
+  margin-bottom: 14px;
   flex-wrap: wrap;
 }
 .channel-select {
@@ -291,6 +399,109 @@ const runAnalysis = async () => {
   min-width: 220px;
 }
 
+/* ─── Controls row ───────────────────────────────────────────── */
+.controls-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 10px 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.ctrl-sep {
+  width: 1px;
+  height: 28px;
+  background: var(--border-color);
+  flex-shrink: 0;
+  @media (max-width: 520px) {
+    display: none;
+  }
+}
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 180px;
+}
+.ctrl-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: default;
+}
+
+/* ─── Range switch ───────────────────────────────────────────── */
+.range-switch {
+  display: flex;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-inline-start: auto;
+}
+.seg-btn {
+  padding: 5px 9px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: "Tajawal", sans-serif;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.18s;
+  white-space: nowrap;
+  &.active {
+    background: #7c3aed;
+    color: #fff;
+  }
+}
+
+/* ─── Limit stepper ──────────────────────────────────────────── */
+.limit-stepper {
+  display: flex;
+  align-items: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-inline-start: auto;
+}
+.step-btn {
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  &:hover {
+    background: var(--border-color);
+    color: var(--text-primary);
+  }
+}
+.step-val {
+  min-width: 44px;
+  text-align: center;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Loading ────────────────────────────────────────────────── */
 .analyze-loading {
   display: flex;
   align-items: center;
@@ -301,6 +512,7 @@ const runAnalysis = async () => {
   font-size: 0.9rem;
 }
 
+/* ─── Peak banner ────────────────────────────────────────────── */
 .peak-banner {
   display: flex;
   align-items: center;
@@ -317,6 +529,7 @@ const runAnalysis = async () => {
   }
 }
 
+/* ─── Chart card ─────────────────────────────────────────────── */
 .chart-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
@@ -331,7 +544,7 @@ const runAnalysis = async () => {
   margin-bottom: 16px;
 }
 
-/* ── Hour chart ──────────────────────────────────── */
+/* ─── Hour chart ─────────────────────────────────────────────── */
 .hour-chart {
   display: flex;
   align-items: flex-end;
@@ -361,7 +574,41 @@ const runAnalysis = async () => {
   color: var(--text-muted);
 }
 
-/* ── Word list ───────────────────────────────────── */
+/* ─── Day chart ──────────────────────────────────────────────── */
+.day-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 100px;
+  overflow-x: auto;
+}
+.day-bar-wrap {
+  flex-shrink: 0;
+  min-width: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  justify-content: flex-end;
+}
+.day-bar {
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, #2aabee, #1a85c8);
+  transition: height 0.4s ease;
+}
+.day-label {
+  font-size: 0.56rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  max-width: 36px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+/* ─── Word list ──────────────────────────────────────────────── */
 .word-list {
   display: flex;
   flex-direction: column;
@@ -383,9 +630,12 @@ const runAnalysis = async () => {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-primary);
-  width: 100px;
+  width: 110px;
   flex-shrink: 0;
   direction: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .word-bar-wrap {
   flex: 1;
@@ -404,7 +654,7 @@ const runAnalysis = async () => {
   font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-sub);
-  width: 30px;
+  width: 34px;
   text-align: end;
   flex-shrink: 0;
 }

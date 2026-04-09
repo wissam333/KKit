@@ -18,11 +18,14 @@ export default defineEventHandler(async (event) => {
     const dialogs = await client.getDialogs({ limit: dlLimit });
 
     // Channels only — same rule as the jobs scanner
-    return dialogs.map((d) => ({
-      id: d.id?.toString(),
-      title: d.title,
-      username: d.entity?.username ?? null,
-    }));
+    return dialogs
+      .filter((d) => d.isChannel && !d.isGroup)
+      .map((d) => ({
+        id: d.id?.toString(),
+        title: d.title,
+        username: d.entity?.username ?? null,
+        isChannel: true,
+      }));
   } finally {
     await client.disconnect();
   }

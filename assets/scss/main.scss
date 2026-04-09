@@ -161,6 +161,10 @@ label {
         margin-top: 80px;
     }
 }
+
+.tool-page {
+    min-height: calc(100dvh - 62px);
+}
 .pointer {
     cursor: pointer !important;
 }

@@ -1,3 +1,4 @@
+// composables/useTelegram.js
 export const useTgConnected = () => useState("tg_connected", () => false);
 export const useTgSession = () => useState("tg_session", () => "");
 export const useTgPending = () =>
@@ -13,7 +14,7 @@ export const useTelegram = () => {
 
   const post = (url, body) => $fetch(url, { method: "POST", body });
 
-  /* ── Step 0: restore session from localStorage ───────────── */
+  /* ── Step 0: restore session ────────────────────────────── */
   const restoreSession = async ({ apiId, apiHash, session }) => {
     await post("/api/tg/connect", { apiId, apiHash, session });
     creds.value = { apiId, apiHash };
@@ -21,14 +22,14 @@ export const useTelegram = () => {
     isConnected.value = true;
   };
 
-  /* ── Step 1: send OTP ────────────────────────────────────── */
+  /* ── Step 1: send OTP ───────────────────────────────────── */
   const sendCode = async ({ apiId, apiHash, phone }) => {
     const res = await post("/api/tg/sendCode", { apiId, apiHash, phone });
     creds.value = { apiId, apiHash };
     pending.value = { session: res.session, codeHash: res.phoneCodeHash };
   };
 
-  /* ── Step 2: verify OTP ──────────────────────────────────── */
+  /* ── Step 2: verify OTP ─────────────────────────────────── */
   const signIn = async ({ phone, code }) => {
     const res = await post("/api/tg/signIn", {
       apiId: creds.value.apiId,
@@ -54,11 +55,83 @@ export const useTelegram = () => {
   const getSession = () => tgSession.value;
   const getCreds = () => creds.value;
 
-  const getDialogs = () =>
-    post("/api/tg/dialogs", {
-      ...creds.value,
+  /**
+   * Stream job results via SSE.
+   * @param {object} opts
+   * @param {number}   opts.searchDays
+   * @param {string[]} opts.keywords
+   * @param {string}   opts.locale
+   * @param {number}   opts.dialogLimit  - max channels to scan
+   * @param {number}   opts.msgLimit     - max messages per channel
+   * @param {function} opts.onTotal
+   * @param {function} opts.onJob
+   * @param {function} opts.onProgress
+   * @param {function} opts.onDone
+   * @param {function} opts.onError
+   * @returns {function} cancel — call to close the SSE connection
+   */
+  const scanJobsStream = ({
+    searchDays,
+    keywords,
+    locale,
+    dialogLimit = 300,
+    msgLimit = 100,
+    onTotal,
+    onJob,
+    onProgress,
+    onDone,
+    onError,
+  }) => {
+    const { apiId, apiHash } = creds.value;
+    const params = new URLSearchParams({
+      apiId,
+      apiHash,
       session: tgSession.value,
+      searchDays: String(searchDays),
+      keywords: JSON.stringify(keywords),
+      locale,
+      dialogLimit: String(dialogLimit),
+      msgLimit: String(msgLimit),
     });
+
+    const es = new EventSource(`/api/tg/jobs/scan?${params}`);
+
+    es.onmessage = (e) => {
+      let data;
+      try {
+        data = JSON.parse(e.data);
+      } catch {
+        return;
+      }
+
+      switch (data.type) {
+        case "total":
+          onTotal?.(data.total);
+          break;
+        case "job":
+          onJob?.(data.job);
+          break;
+        case "progress":
+          onProgress?.(data.scanned, data.total);
+          break;
+        case "done":
+          onDone?.(data.scanned);
+          es.close();
+          break;
+        case "error":
+          onError?.(data.message);
+          es.close();
+          break;
+      }
+    };
+
+    es.onerror = () => {
+      onError?.("Connection lost");
+      es.close();
+    };
+
+    return () => es.close();
+  };
 
   return {
     isConnected,
@@ -68,6 +141,6 @@ export const useTelegram = () => {
     disconnect,
     getSession,
     getCreds,
-    getDialogs,
+    scanJobsStream,
   };
 };

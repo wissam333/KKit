@@ -13,9 +13,9 @@
 
     <template v-else>
       <div class="tool-header">
-        <NuxtLink to="/gramkit" class="back-btn"
-          ><Icon name="mdi:arrow-left" size="16"
-        /></NuxtLink>
+        <NuxtLink to="/gramkit" class="back-btn">
+          <Icon name="mdi:arrow-left" size="16" />
+        </NuxtLink>
         <div class="tool-header-icon teal">
           <Icon name="mdi:image-multiple-outline" size="22" />
         </div>
@@ -36,6 +36,36 @@
           searchable
           class="channel-select"
         />
+
+        <div class="limit-field">
+          <label class="limit-label">{{ $t("gramkit.media.limit") }}</label>
+          <div class="limit-input-wrap">
+            <button
+              class="limit-step"
+              :disabled="fetchLimit <= 10"
+              @click="fetchLimit = Math.max(10, fetchLimit - 10)"
+            >
+              <Icon name="mdi:minus" size="13" />
+            </button>
+            <input
+              v-model.number="fetchLimit"
+              type="number"
+              class="limit-input"
+              min="10"
+              max="200"
+              step="10"
+              @blur="fetchLimit = Math.min(200, Math.max(10, fetchLimit || 50))"
+            />
+            <button
+              class="limit-step"
+              :disabled="fetchLimit >= 200"
+              @click="fetchLimit = Math.min(200, fetchLimit + 10)"
+            >
+              <Icon name="mdi:plus" size="13" />
+            </button>
+          </div>
+        </div>
+
         <div class="seg-control">
           <button
             v-for="f in filterOptions"
@@ -47,6 +77,7 @@
             {{ f.label }}
           </button>
         </div>
+
         <SharedUiButtonBase
           :loading="loading"
           :disabled="!selectedChannel"
@@ -125,6 +156,7 @@ const { $toast } = useNuxtApp();
 const { isConnected, getSession, getCreds } = useTelegram();
 
 const selectedChannel = ref(null);
+const fetchLimit = ref(50);
 const loadingDialogs = ref(false);
 const loading = ref(false);
 const dialogs = ref([]);
@@ -145,11 +177,13 @@ const channelOptions = computed(() =>
     icon: "mdi:telegram",
   })),
 );
+
 const filteredMedia = computed(() =>
   typeFilter.value === "all"
     ? mediaList.value
     : mediaList.value.filter((m) => m.type === typeFilter.value),
 );
+
 const statCards = computed(() => [
   {
     key: "total",
@@ -197,6 +231,7 @@ const fetchMedia = async () => {
         ...getCreds(),
         session: getSession(),
         channelId: selectedChannel.value,
+        limit: fetchLimit.value,
       },
     });
     mediaList.value = result.items.map((m) => ({
@@ -223,7 +258,6 @@ const downloadItem = async (item) => {
         msgId: item.id,
       },
     });
-    // result.data is base64
     const binary = atob(result.data);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -321,6 +355,65 @@ const formatSize = (bytes) => {
 .channel-select {
   flex: 1;
   min-width: 200px;
+}
+
+/* Limit field */
+.limit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.limit-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0 2px;
+}
+.limit-input-wrap {
+  display: flex;
+  align-items: center;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+  height: 38px;
+}
+.limit-step {
+  width: 30px;
+  height: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  &:hover:not(:disabled) {
+    color: #14b8a6;
+    background: rgba(20, 184, 166, 0.08);
+  }
+  &:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+}
+.limit-input {
+  width: 46px;
+  border: none;
+  background: none;
+  text-align: center;
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: "Tajawal", sans-serif;
+  color: var(--text-primary);
+  outline: none;
+  -moz-appearance: textfield;
+  &::-webkit-outer-spin-button,
+  &::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+  }
 }
 
 .seg-control {

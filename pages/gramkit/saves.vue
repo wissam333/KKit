@@ -12,11 +12,11 @@
     </div>
 
     <template v-else>
-      <!-- ── Header ── -->
+      <!-- Header -->
       <div class="tool-header">
-        <NuxtLink to="/gramkit" class="back-btn"
-          ><Icon name="mdi:arrow-left" size="16"
-        /></NuxtLink>
+        <NuxtLink to="/gramkit" class="back-btn">
+          <Icon name="mdi:arrow-left" size="16" />
+        </NuxtLink>
         <div class="tool-header-icon saves">
           <Icon name="mdi:bookmark-multiple-outline" size="22" />
         </div>
@@ -24,22 +24,64 @@
           <h1 class="tool-title">{{ $t("gramkit.saves.title") }}</h1>
           <p class="tool-sub">{{ $t("gramkit.saves.subtitle") }}</p>
         </div>
-        <div class="ms-auto d-flex gap-2">
-          <SharedUiButtonBase
-            v-if="!messages.length"
-            :loading="loading"
-            icon-left="mdi:download-outline"
-            @click="loadSaved"
-            >{{ $t("gramkit.saves.load") }}</SharedUiButtonBase
-          >
+        <div class="header-actions">
+          <template v-if="!messages.length">
+            <div class="limit-field">
+              <label class="limit-label">{{ $t("gramkit.saves.limit") }}</label>
+              <div class="limit-input-wrap">
+                <button
+                  class="limit-step"
+                  :disabled="fetchLimit <= 50"
+                  @click="fetchLimit = Math.max(50, fetchLimit - 50)"
+                >
+                  <Icon name="mdi:minus" size="13" />
+                </button>
+                <input
+                  v-model.number="fetchLimit"
+                  type="number"
+                  class="limit-input"
+                  min="50"
+                  max="500"
+                  step="50"
+                  @blur="
+                    fetchLimit = Math.min(500, Math.max(50, fetchLimit || 200))
+                  "
+                />
+                <button
+                  class="limit-step"
+                  :disabled="fetchLimit >= 500"
+                  @click="fetchLimit = Math.min(500, fetchLimit + 50)"
+                >
+                  <Icon name="mdi:plus" size="13" />
+                </button>
+              </div>
+            </div>
+            <SharedUiButtonBase
+              :loading="loading"
+              icon-left="mdi:download-outline"
+              @click="loadSaved()"
+            >
+              {{ $t("gramkit.saves.load") }}
+            </SharedUiButtonBase>
+          </template>
           <template v-else>
             <SharedUiButtonBase
               icon-left="mdi:refresh"
               variant="outline"
               size="sm"
-              @click="loadSaved"
+              @click="loadSaved()"
             >
               {{ $t("gramkit.saves.reload") }}
+            </SharedUiButtonBase>
+            <SharedUiButtonBase
+              v-if="selected.length"
+              icon-left="mdi:delete-sweep-outline"
+              variant="error"
+              size="sm"
+              :loading="bulkDeleting"
+              @click="confirmBulkDelete"
+            >
+              {{ $t("gramkit.saves.deleteSelected", { n: selected.length }) }}
             </SharedUiButtonBase>
             <SharedUiButtonBase
               icon-left="mdi:export-variant"
@@ -53,7 +95,7 @@
         </div>
       </div>
 
-      <!-- ── Loading ── -->
+      <!-- Loading -->
       <div v-if="loading" class="loading-wrap">
         <SharedUiIndicatorsProgress
           type="linear"
@@ -64,9 +106,8 @@
         <span class="load-msg">{{ $t("gramkit.saves.loading") }}</span>
       </div>
 
-      <!-- ── Controls ── -->
+      <!-- Controls -->
       <div v-if="messages.length && !loading" class="controls-row">
-        <!-- Search -->
         <SharedUiFormBaseInput
           v-model="search"
           :placeholder="$t('gramkit.saves.search')"
@@ -74,7 +115,6 @@
           clearable
           class="search-input"
         />
-        <!-- Type filter -->
         <div class="seg-control">
           <button
             v-for="f in typeFilters"
@@ -87,8 +127,7 @@
             {{ f.label }}
           </button>
         </div>
-        <!-- Tag filter -->
-        <div class="tag-pills">
+        <div v-if="allTags.length" class="tag-pills">
           <button
             v-for="tag in allTags"
             :key="tag"
@@ -101,7 +140,24 @@
         </div>
       </div>
 
-      <!-- ── Stats row ── -->
+      <!-- Bulk select bar -->
+      <div v-if="messages.length && !loading" class="bulk-bar">
+        <label class="bulk-check-label">
+          <input
+            type="checkbox"
+            :checked="allFilteredSelected"
+            @change="toggleSelectAll"
+          />
+          <span
+            >{{ $t("gramkit.saves.selectAll") }} ({{ filtered.length }})</span
+          >
+        </label>
+        <span v-if="selected.length" class="bulk-count">
+          {{ selected.length }} {{ $t("gramkit.saves.selected") }}
+        </span>
+      </div>
+
+      <!-- Stats -->
       <SharedUiCardsStats
         v-if="messages.length && !loading"
         :stats="statCards"
@@ -109,22 +165,37 @@
         :icon-size="20"
       />
 
-      <!-- ── Message list ── -->
+      <!-- Message list -->
       <div v-if="filtered.length && !loading" class="msg-list">
         <div
           v-for="msg in filtered"
           :key="msg.id"
           class="msg-card"
-          :class="{ 'msg-card--tagged': getLocalData(msg.id).tags.length }"
+          :class="{
+            'msg-card--tagged': getLocalData(msg.id).tags.length,
+            'msg-card--selected': selected.includes(msg.id),
+          }"
         >
+          <!-- Selection checkbox -->
+          <div class="msg-select" @click.stop="toggleSelect(msg.id)">
+            <input
+              type="checkbox"
+              :checked="selected.includes(msg.id)"
+              @change="toggleSelect(msg.id)"
+            />
+          </div>
+
           <!-- Head -->
           <div class="msg-head">
             <span class="msg-type-icon">
               <Icon :name="msgIcon(msg)" size="15" />
             </span>
             <span class="msg-date">{{ formatDate(msg.date) }}</span>
-            <div class="ms-auto d-flex gap-1">
-              <!-- Tag button -->
+            <span v-if="msg.isForwarded" class="fwd-badge">
+              <Icon name="mdi:share-outline" size="12" />
+              {{ msg.forwardedFrom?.fromName ?? $t("gramkit.saves.forwarded") }}
+            </span>
+            <div class="msg-actions">
               <button
                 class="action-btn"
                 :title="$t('gramkit.saves.addTag')"
@@ -132,7 +203,6 @@
               >
                 <Icon name="mdi:tag-plus-outline" size="14" />
               </button>
-              <!-- Copy -->
               <button
                 class="action-btn"
                 :title="$t('gramkit.saves.copy')"
@@ -140,7 +210,6 @@
               >
                 <Icon name="mdi:content-copy" size="14" />
               </button>
-              <!-- Delete from saved -->
               <button
                 class="action-btn danger"
                 :title="$t('gramkit.saves.delete')"
@@ -151,7 +220,7 @@
             </div>
           </div>
 
-          <!-- Text content -->
+          <!-- Text -->
           <p
             v-if="msg.text"
             class="msg-text"
@@ -171,6 +240,21 @@
             }}
           </button>
 
+          <!-- URLs -->
+          <div v-if="msg.urls?.length" class="url-list">
+            <a
+              v-for="url in msg.urls.slice(0, 3)"
+              :key="url"
+              :href="url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="url-chip"
+            >
+              <Icon name="mdi:link-variant" size="12" />
+              {{ truncateUrl(url) }}
+            </a>
+          </div>
+
           <!-- Media indicator -->
           <div v-if="msg.hasMedia" class="media-indicator">
             <Icon
@@ -181,7 +265,7 @@
               "
               size="14"
             />
-            {{ msg.mediaType }}
+            {{ msg.fileName ?? msg.mediaType }}
           </div>
 
           <!-- Tags -->
@@ -206,6 +290,18 @@
         </div>
       </div>
 
+      <!-- Load more -->
+      <div v-if="hasMore && !loading" class="load-more-row">
+        <SharedUiButtonBase
+          :loading="loadingMore"
+          icon-left="mdi:chevron-down"
+          variant="outline"
+          @click="loadMore"
+        >
+          {{ $t("gramkit.saves.loadMore") }}
+        </SharedUiButtonBase>
+      </div>
+
       <SharedUiFeedbackEmptyState
         v-if="!messages.length && !loading"
         icon="mdi:bookmark-multiple-outline"
@@ -213,7 +309,6 @@
         description="gramkit.saves.emptyDesc"
         size="lg"
       />
-
       <SharedUiFeedbackEmptyState
         v-if="messages.length && !filtered.length && !loading"
         icon="mdi:magnify"
@@ -223,14 +318,13 @@
       />
     </template>
 
-    <!-- ── Tag modal ── -->
+    <!-- Tag modal -->
     <SharedUiDialogReusableDialog
       v-model="showTagModal"
       :title="$t('gramkit.saves.tagModalTitle')"
       max-width="420px"
     >
       <div class="tag-modal-body">
-        <!-- Quick tag buttons -->
         <div class="quick-tags">
           <button
             v-for="qt in quickTags"
@@ -242,14 +336,12 @@
             #{{ qt }}
           </button>
         </div>
-        <!-- Custom tag input -->
         <SharedUiFormBaseInput
           v-model="newTag"
           :placeholder="$t('gramkit.saves.newTag')"
           icon-left="mdi:tag-outline"
           @keyup.enter="addEditTag"
         />
-        <!-- Current tags on this message -->
         <div v-if="editingTags.length" class="editing-tags">
           <span v-for="tag in editingTags" :key="tag" class="tag-chip">
             #{{ tag }}
@@ -258,7 +350,6 @@
             </button>
           </span>
         </div>
-        <!-- Note input -->
         <SharedUiFormBaseTextarea
           v-model="editingNote"
           :label="$t('gramkit.saves.note')"
@@ -266,12 +357,39 @@
           :rows="3"
         />
         <div class="tag-modal-actions">
-          <SharedUiButtonBase variant="outline" @click="showTagModal = false">{{
-            $t("gramkit.saves.cancel")
-          }}</SharedUiButtonBase>
-          <SharedUiButtonBase icon-left="mdi:check" @click="saveTagData">{{
-            $t("gramkit.saves.save")
-          }}</SharedUiButtonBase>
+          <SharedUiButtonBase variant="outline" @click="showTagModal = false">
+            {{ $t("gramkit.saves.cancel") }}
+          </SharedUiButtonBase>
+          <SharedUiButtonBase icon-left="mdi:check" @click="saveTagData">
+            {{ $t("gramkit.saves.save") }}
+          </SharedUiButtonBase>
+        </div>
+      </div>
+    </SharedUiDialogReusableDialog>
+
+    <!-- Bulk delete confirm -->
+    <SharedUiDialogReusableDialog
+      v-model="showBulkConfirm"
+      :title="$t('gramkit.saves.bulkDeleteTitle')"
+      max-width="420px"
+    >
+      <div class="confirm-body">
+        <p>{{ $t("gramkit.saves.bulkDeleteMsg", { n: selected.length }) }}</p>
+        <div class="confirm-actions">
+          <SharedUiButtonBase
+            variant="outline"
+            @click="showBulkConfirm = false"
+          >
+            {{ $t("gramkit.saves.cancel") }}
+          </SharedUiButtonBase>
+          <SharedUiButtonBase
+            variant="error"
+            icon-left="mdi:delete-sweep-outline"
+            :loading="bulkDeleting"
+            @click="doBulkDelete"
+          >
+            {{ $t("gramkit.saves.confirm") }}
+          </SharedUiButtonBase>
         </div>
       </div>
     </SharedUiDialogReusableDialog>
@@ -284,25 +402,81 @@ const { $toast } = useNuxtApp();
 const { isConnected, getSession, getCreds } = useTelegram();
 
 const loading = ref(false);
+const loadingMore = ref(false);
 const loadPct = ref(0);
 const messages = ref([]);
 const search = ref("");
 const typeFilter = ref("all");
 const selectedTags = ref([]);
 const expanded = ref({});
+const fetchLimit = ref(200);
+const nextOffsetId = ref(null);
+const hasMore = ref(false);
 
+// Bulk selection
+const selected = ref([]);
+const bulkDeleting = ref(false);
+const showBulkConfirm = ref(false);
+
+const toggleSelect = (id) => {
+  selected.value.includes(id)
+    ? (selected.value = selected.value.filter((s) => s !== id))
+    : selected.value.push(id);
+};
+const allFilteredSelected = computed(
+  () =>
+    filtered.value.length > 0 &&
+    filtered.value.every((m) => selected.value.includes(m.id)),
+);
+const toggleSelectAll = () => {
+  allFilteredSelected.value
+    ? (selected.value = selected.value.filter(
+        (id) => !filtered.value.find((m) => m.id === id),
+      ))
+    : filtered.value.forEach((m) => {
+        if (!selected.value.includes(m.id)) selected.value.push(m.id);
+      });
+};
+const confirmBulkDelete = () => {
+  showBulkConfirm.value = true;
+};
+const doBulkDelete = async () => {
+  showBulkConfirm.value = false;
+  bulkDeleting.value = true;
+  try {
+    const { deleted } = await $fetch("/api/tg/saves/delete", {
+      method: "POST",
+      body: {
+        ...getCreds(),
+        session: getSession(),
+        msgIds: selected.value.map(Number),
+      },
+    });
+    messages.value = messages.value.filter(
+      (m) => !selected.value.includes(m.id),
+    );
+    $toast.success(`${t("gramkit.saves.deleted")} ${deleted}`);
+    selected.value = [];
+  } catch {
+    $toast.error(t("gramkit.toast.error"));
+  } finally {
+    bulkDeleting.value = false;
+  }
+};
+
+// Local metadata
 const LOCAL_KEY = "gk_saves_meta";
 const localData = ref(JSON.parse(localStorage.getItem(LOCAL_KEY) ?? "{}"));
 const getLocalData = (id) => localData.value[id] ?? { tags: [], note: "" };
 const saveLocal = () =>
   localStorage.setItem(LOCAL_KEY, JSON.stringify(localData.value));
 
+// Tag modal
 const showTagModal = ref(false);
 const editingMsgId = ref(null);
 const editingTags = ref([]);
 const editingNote = ref("");
 const newTag = ref("");
-
 const quickTags = [
   "important",
   "work",
@@ -367,6 +541,11 @@ const typeFilters = computed(() => [
   { v: "text", label: t("gramkit.saves.text"), icon: "mdi:text" },
   { v: "media", label: t("gramkit.saves.media"), icon: "mdi:image-outline" },
   { v: "link", label: t("gramkit.saves.links"), icon: "mdi:link-variant" },
+  {
+    v: "forwarded",
+    label: t("gramkit.saves.forwarded"),
+    icon: "mdi:share-outline",
+  },
   { v: "tagged", label: t("gramkit.saves.tagged"), icon: "mdi:tag-outline" },
 ]);
 
@@ -375,8 +554,8 @@ const filtered = computed(() => {
   if (typeFilter.value === "text")
     res = res.filter((m) => m.text && !m.hasMedia);
   if (typeFilter.value === "media") res = res.filter((m) => m.hasMedia);
-  if (typeFilter.value === "link")
-    res = res.filter((m) => m.text && /https?:\/\//i.test(m.text));
+  if (typeFilter.value === "link") res = res.filter((m) => m.urls?.length > 0);
+  if (typeFilter.value === "forwarded") res = res.filter((m) => m.isForwarded);
   if (typeFilter.value === "tagged")
     res = res.filter((m) => getLocalData(m.id).tags.length > 0);
   if (selectedTags.value.length)
@@ -401,7 +580,7 @@ const statCards = computed(() => [
   {
     key: "text",
     label: "gramkit.saves.stats.text",
-    value: messages.value.filter((m) => m.text).length,
+    value: messages.value.filter((m) => m.text && !m.hasMedia).length,
     icon: "mdi:text",
     color: "purple",
   },
@@ -421,18 +600,31 @@ const statCards = computed(() => [
   },
 ]);
 
-const loadSaved = async () => {
+const loadSaved = async (offsetId = 0) => {
   loading.value = true;
   loadPct.value = 0;
-  messages.value = [];
+  if (!offsetId) {
+    messages.value = [];
+    selected.value = [];
+  }
   try {
     const result = await $fetch("/api/tg/saves/list", {
       method: "POST",
-      body: { ...getCreds(), session: getSession() },
+      body: {
+        ...getCreds(),
+        session: getSession(),
+        limit: fetchLimit.value,
+        offsetId,
+      },
     });
-    messages.value = result.messages;
+    messages.value = offsetId
+      ? [...messages.value, ...result.messages]
+      : result.messages;
+    nextOffsetId.value = result.nextOffsetId;
+    hasMore.value = result.hasMore;
     loadPct.value = 100;
-    $toast.success(`${messages.value.length} ${t("gramkit.saves.loaded")}`);
+    if (!offsetId)
+      $toast.success(`${messages.value.length} ${t("gramkit.saves.loaded")}`);
   } catch (e) {
     $toast.error(
       t("gramkit.toast.error") + ": " + (e.data?.message ?? e.message),
@@ -442,13 +634,41 @@ const loadSaved = async () => {
   }
 };
 
+const loadMore = async () => {
+  if (!nextOffsetId.value || loadingMore.value) return;
+  loadingMore.value = true;
+  try {
+    const result = await $fetch("/api/tg/saves/list", {
+      method: "POST",
+      body: {
+        ...getCreds(),
+        session: getSession(),
+        limit: fetchLimit.value,
+        offsetId: nextOffsetId.value,
+      },
+    });
+    messages.value = [...messages.value, ...result.messages];
+    nextOffsetId.value = result.nextOffsetId;
+    hasMore.value = result.hasMore;
+  } catch {
+    $toast.error(t("gramkit.toast.error"));
+  } finally {
+    loadingMore.value = false;
+  }
+};
+
 const deleteMsg = async (msg) => {
   try {
     await $fetch("/api/tg/saves/delete", {
       method: "POST",
-      body: { ...getCreds(), session: getSession(), msgId: parseInt(msg.id) },
+      body: {
+        ...getCreds(),
+        session: getSession(),
+        msgIds: [parseInt(msg.id)],
+      },
     });
     messages.value = messages.value.filter((m) => m.id !== msg.id);
+    selected.value = selected.value.filter((id) => id !== msg.id);
     $toast.success(t("gramkit.saves.deleted"));
   } catch {
     $toast.error(t("gramkit.toast.error"));
@@ -468,7 +688,12 @@ const exportAll = () => {
       ? `[${d.tags.map((t) => "#" + t).join(" ")}]`
       : "";
     const note = d.note ? `Note: ${d.note}` : "";
-    return `--- ${formatDate(m.date)} ${tags}\n${m.text ?? "[media]"}\n${note}\n`;
+    const fwd =
+      m.isForwarded && m.forwardedFrom?.fromName
+        ? `Fwd: ${m.forwardedFrom.fromName}`
+        : "";
+    const urls = m.urls?.length ? `URLs: ${m.urls.join(", ")}` : "";
+    return `--- ${formatDate(m.date)} ${tags} ${fwd}\n${m.text ?? "[media]"}\n${[urls, note].filter(Boolean).join("\n")}\n`;
   });
   const blob = new Blob([lines.join("\n")], {
     type: "text/plain;charset=utf-8;",
@@ -485,7 +710,8 @@ const exportAll = () => {
 const msgIcon = (msg) => {
   if (msg.hasMedia && msg.mediaType === "photo") return "mdi:image-outline";
   if (msg.hasMedia) return "mdi:file-outline";
-  if (msg.text && /https?:\/\//i.test(msg.text)) return "mdi:link-variant";
+  if (msg.urls?.length) return "mdi:link-variant";
+  if (msg.isForwarded) return "mdi:share-outline";
   return "mdi:text";
 };
 
@@ -499,6 +725,17 @@ const formatDate = (ts) =>
       minute: "2-digit",
     },
   );
+
+const truncateUrl = (url) => {
+  try {
+    const u = new URL(url);
+    const path =
+      u.pathname.length > 20 ? u.pathname.slice(0, 20) + "…" : u.pathname;
+    return u.hostname + path;
+  } catch {
+    return url.slice(0, 35) + "…";
+  }
+};
 </script>
 
 <style scoped lang="scss">
@@ -512,18 +749,6 @@ const formatDate = (ts) =>
   display: flex;
   justify-content: center;
   padding-top: 80px;
-}
-.ms-auto {
-  margin-inline-start: auto;
-}
-.d-flex {
-  display: flex;
-}
-.gap-1 {
-  gap: 6px;
-}
-.gap-2 {
-  gap: 10px;
 }
 
 .tool-header {
@@ -575,6 +800,73 @@ const formatDate = (ts) =>
   margin: 0;
 }
 
+.header-actions {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Limit stepper */
+.limit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.limit-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0 2px;
+}
+.limit-input-wrap {
+  display: flex;
+  align-items: center;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+  height: 38px;
+}
+.limit-step {
+  width: 30px;
+  height: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  &:hover:not(:disabled) {
+    color: #f59e0b;
+    background: rgba(245, 158, 11, 0.08);
+  }
+  &:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+}
+.limit-input {
+  width: 46px;
+  border: none;
+  background: none;
+  text-align: center;
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: "Tajawal", sans-serif;
+  color: var(--text-primary);
+  outline: none;
+  -moz-appearance: textfield;
+  &::-webkit-outer-spin-button,
+  &::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+  }
+}
+
 .loading-wrap {
   padding: 32px 0;
   display: flex;
@@ -587,13 +879,12 @@ const formatDate = (ts) =>
   text-align: center;
 }
 
-/* ── Controls ── */
 .controls-row {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 .search-input {
   flex: 1;
@@ -647,7 +938,31 @@ const formatDate = (ts) =>
   }
 }
 
-/* ── Message list ── */
+/* Bulk bar */
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  font-size: 0.82rem;
+}
+.bulk-check-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  color: var(--text-sub);
+  font-weight: 600;
+  input {
+    accent-color: #f59e0b;
+  }
+}
+.bulk-count {
+  color: #f59e0b;
+  font-weight: 700;
+}
+
+/* Message list */
 .msg-list {
   display: flex;
   flex-direction: column;
@@ -661,26 +976,40 @@ const formatDate = (ts) =>
   display: flex;
   flex-direction: column;
   gap: 10px;
-  animation: card-in 0.3s ease both;
+  animation: card-in 0.25s ease both;
   &--tagged {
     border-color: rgba(245, 158, 11, 0.35);
+  }
+  &--selected {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.03);
   }
 }
 @keyframes card-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
-
+.msg-select {
+  display: flex;
+  align-items: center;
+  input {
+    accent-color: #f59e0b;
+    cursor: pointer;
+    width: 15px;
+    height: 15px;
+  }
+}
 .msg-head {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 .msg-type-icon {
   width: 26px;
@@ -696,6 +1025,27 @@ const formatDate = (ts) =>
 .msg-date {
   font-size: 0.73rem;
   color: var(--text-muted);
+}
+.fwd-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: rgba(99, 102, 241, 0.08);
+  color: #6366f1;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  font-size: 0.7rem;
+  font-weight: 600;
+  max-width: 160px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.msg-actions {
+  margin-inline-start: auto;
+  display: flex;
+  gap: 6px;
 }
 .action-btn {
   width: 28px;
@@ -718,7 +1068,6 @@ const formatDate = (ts) =>
     border-color: #ef4444;
   }
 }
-
 .msg-text {
   font-size: 0.87rem;
   color: var(--text-primary);
@@ -743,6 +1092,35 @@ const formatDate = (ts) =>
   padding: 0;
   align-self: flex-start;
 }
+
+/* URLs */
+.url-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.url-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 7px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  color: var(--text-sub);
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-decoration: none;
+  max-width: 220px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  &:hover {
+    color: #f59e0b;
+    border-color: rgba(245, 158, 11, 0.4);
+  }
+}
+
 .media-indicator {
   display: inline-flex;
   align-items: center;
@@ -754,8 +1132,11 @@ const formatDate = (ts) =>
   font-size: 0.75rem;
   font-weight: 600;
   width: fit-content;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 260px;
 }
-
 .tag-row {
   display: flex;
   flex-wrap: wrap;
@@ -785,7 +1166,6 @@ const formatDate = (ts) =>
     opacity: 1;
   }
 }
-
 .msg-note {
   display: flex;
   align-items: flex-start;
@@ -798,7 +1178,14 @@ const formatDate = (ts) =>
   line-height: 1.5;
 }
 
-/* ── Tag modal ── */
+/* Load more */
+.load-more-row {
+  display: flex;
+  justify-content: center;
+  padding: 20px 0;
+}
+
+/* Tag modal */
 .tag-modal-body {
   display: flex;
   flex-direction: column;
@@ -833,6 +1220,25 @@ const formatDate = (ts) =>
   gap: 6px;
 }
 .tag-modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+/* Confirm */
+.confirm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 8px 0;
+}
+.confirm-body p {
+  font-size: 0.9rem;
+  color: var(--text-sub);
+  margin: 0;
+  line-height: 1.6;
+}
+.confirm-actions {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
