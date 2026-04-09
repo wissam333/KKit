@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="public/logo.png" alt="KKit Logo" width="80" />
+<img src="interface.png" alt="KKit Logo" width="80" />
 
 # KKit
 
