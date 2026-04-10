@@ -106,6 +106,15 @@
       <div v-show="activeTab === 'screen'" class="tab-panel">
         <RoomScreenShare :room="room" />
       </div>
+
+      <!-- GAMES -->
+      <div
+        v-show="activeTab === 'games'"
+        class="tab-panel"
+        style="height: 100%"
+      >
+        <RoomGamesPlane :room="room" />
+      </div>
     </main>
 
     <!-- ── SHARE MODAL ───────────────────────────────────────────── -->
@@ -163,6 +172,7 @@ const tabs = [
   { key: "board", labelKey: "whiteboard", icon: "mdi:draw" },
   { key: "chat", labelKey: "chat", icon: "mdi:chat-outline" },
   { key: "screen", labelKey: "screenShare", icon: "mdi:monitor-share" },
+  { key: "games", labelKey: "games", icon: "mdi:gamepad-variant-outline" },
 ];
 
 // FIX: Removed the previous activeTab watcher that disabled/enabled camera

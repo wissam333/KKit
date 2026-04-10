@@ -9,6 +9,7 @@
       </main>
     </NuxtLayout>
     <SharedUiFeedbackToast position="center" :duration="6000" />
+    <GlobalCallBanner></GlobalCallBanner>
   </div>
 </template>
 

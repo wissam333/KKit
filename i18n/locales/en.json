@@ -1,4 +1,20 @@
 {
+  "gameTitle": "SKY ACES",
+  "gameSubtitle": "WW1 DOGFIGHT — MULTIPLAYER",
+  "chooseAircraft": "CHOOSE YOUR AIRCRAFT",
+  "pilotsInHangar": "PILOTS IN HANGAR",
+  "readyUp": "READY UP",
+  "flySolo": "FLY SOLO (vs AI)",
+  "allPlayersReadyHint": "All players ready → game starts automatically",
+  "hp": "HP",
+  "ammo": "AMMO",
+  "kills": "KILLS",
+  "victory": "VICTORY!",
+  "defeated": "DEFEATED",
+  "winsDogfight": "wins the dogfight!",
+  "playAgain": "PLAY AGAIN",
+  "waiting": "…",
+  "games": "Games",
   "gramkit": {
     "wrapped": {
       "title": "Your Telegram Wrapped",

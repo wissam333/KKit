@@ -120,25 +120,15 @@
           </button>
         </div>
       </div>
-
-      <div v-if="incomingCalls.length" class="incoming-calls-banner">
-        <div v-for="ic in incomingCalls" :key="ic.peerId" class="incoming-item">
-          <Icon name="mdi:phone-ring" size="16" class="ring-anim" />
-          <span class="ic-name">{{ ic.name }} {{ $t("isCalling") }}</span>
-          <button class="ic-btn answer" @click="answerOne(ic)">
-            <Icon name="mdi:phone" size="14" />
-          </button>
-          <button class="ic-btn decline" @click="declineOne(ic)">
-            <Icon name="mdi:phone-hangup" size="14" />
-          </button>
-        </div>
-      </div>
     </div>
   </div>
 </template>
 
 <script setup>
+/* Component Setup */
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
+import { useCalls } from "~/composables/useCalls";
+import { useRouter } from "vue-router";
 
 const props = defineProps({
   room: { type: Object, required: true },
@@ -147,9 +137,6 @@ const props = defineProps({
   myName: { type: String, default: "Me" },
 });
 
-// FIX: Access .value inside the computed callback — not at the top level.
-// Previously `!props.room.isMicActive.value` was evaluated once during
-// prop destructuring, losing reactivity.
 const micMuted = computed(() => !props.room.isMicActive.value);
 const camOff = computed(() => !props.room.isCameraActive.value);
 
@@ -157,6 +144,7 @@ const toggleMic = () => props.room.toggleMic();
 const toggleCam = () => props.room.toggleCamera();
 
 const { t } = useI18n();
+const router = useRouter();
 
 const localVideoEl = ref(null);
 const remoteVideoEls = new Map();
@@ -167,7 +155,9 @@ const callingPeers = ref(new Set());
 
 const inCall = ref(false);
 const callSeconds = ref(0);
-const incomingCalls = ref([]);
+
+/* Global Calls Integration */
+const { incomingCalls, answerBus, declineBus } = useCalls();
 
 let timerInterval = null;
 
@@ -202,12 +192,9 @@ const setRemoteRef = (peerId, el) => {
   const stream = remoteStreams.value.get(peerId);
   if (stream && el.srcObject !== stream) {
     el.srcObject = stream;
-    // Apply whatever mute state the map already knows (default false = unmuted)
     const knownMuted = remoteMutes.value.get(peerId) ?? false;
     el.muted = knownMuted;
     el.play().catch(() => {
-      // Autoplay blocked — browser forces mute. Record this in the map so
-      // toggleRemoteMute knows the real starting state and one click works.
       el.muted = true;
       remoteMutes.value = new Map([...remoteMutes.value, [peerId, true]]);
       el.play().catch(() => {});
@@ -215,9 +202,6 @@ const setRemoteRef = (peerId, el) => {
   }
 };
 
-// FIX: Only broadcast if there are actual data connections open.
-// Previously this was called immediately on stream connect before any peer
-// was in the mesh, causing silent failures.
 const broadcastMediaState = () => {
   if (!props.room?.broadcast) return;
   props.room.broadcast({
@@ -256,9 +240,6 @@ const hangUpAll = () => {
 };
 
 const answerOne = async (ic) => {
-  // FIX: Only answer regular video/audio calls here.
-  // Screen-share calls are handled by RoomScreenShare via the "incoming-call"
-  // message with metadata.type === "screen-share".
   if (ic.call?.metadata?.type === "screen-share") return;
   await props.room.answerCall(ic.call, true);
   incomingCalls.value = incomingCalls.value.filter(
@@ -266,6 +247,13 @@ const answerOne = async (ic) => {
   );
   inCall.value = true;
   startTimer();
+
+  // Route to the call page if they answered from somewhere else
+  // Adjust this route to match your specific video page path
+  // const currentRoute = router.currentRoute.value;
+  // if (!currentRoute.path.includes("/your-call-page-path")) {
+  //   router.push("/your-call-page-path");
+  // }
 };
 
 const declineOne = (ic) => {
@@ -277,8 +265,6 @@ const declineOne = (ic) => {
 
 const toggleRemoteMute = (peerId) => {
   const el = remoteVideoEls.get(peerId);
-  // Read the element's ACTUAL muted state as source of truth — not the map —
-  // so we're never off by one even if autoplay silently forced a mute.
   const currentlyMuted = el
     ? el.muted
     : (remoteMutes.value.get(peerId) ?? false);
@@ -305,7 +291,14 @@ const stopTimer = () => {
 };
 
 let unsubscribe;
+let unsubscribeAnswerBus;
+let unsubscribeDeclineBus;
+
 onMounted(() => {
+  /* Event Bus Subscriptions */
+  unsubscribeAnswerBus = answerBus.on((ic) => answerOne(ic));
+  unsubscribeDeclineBus = declineBus.on((ic) => declineOne(ic));
+
   unsubscribe = props.room.onMessage((data, fromPeerId) => {
     if (data.type === "remote-stream") {
       remoteStreams.value = new Map([
@@ -315,7 +308,6 @@ onMounted(() => {
       callingPeers.value.delete(data.peerId);
       callingPeers.value = new Set(callingPeers.value);
 
-      // Broadcast our media state to the newly connected peer
       broadcastMediaState();
 
       nextTick(() => {
@@ -348,11 +340,12 @@ onMounted(() => {
         stopTimer();
       }
     } else if (data.type === "incoming-call") {
-      // FIX: Skip screen-share calls — RoomScreenShare handles those.
       if (data.metadata?.type === "screen-share") return;
 
       const member = props.members.find((m) => m.peerId === data.peerId);
       const callerName = member?.name || data.metadata?.name || t("unknown");
+
+      /* Global State Update */
       incomingCalls.value = [
         ...incomingCalls.value.filter((c) => c.peerId !== data.peerId),
         { peerId: data.peerId, name: callerName, call: data.call },
@@ -360,18 +353,16 @@ onMounted(() => {
     }
   });
 
-  // Fetch/start local stream eagerly so the user sees themselves immediately
   props.room.getLocalStream();
 });
 
 onUnmounted(() => {
   unsubscribe?.();
+  unsubscribeAnswerBus?.();
+  unsubscribeDeclineBus?.();
   stopTimer();
 });
 
-// FIX: Watch the raw refs (.isMicActive / .isCameraActive) rather than
-// computed values. Using `() => props.room.isMicActive.value` is correct
-// because Vue's watch needs a getter function returning the primitive value.
 watch(
   [() => props.room.isMicActive.value, () => props.room.isCameraActive.value],
   () => {
@@ -379,7 +370,6 @@ watch(
   },
 );
 
-// Attach the local stream as soon as both the video element and the stream exist
 watch(
   [() => props.room.localStream.value, localVideoEl],
   ([newStream, el]) => {
@@ -392,6 +382,7 @@ watch(
 </script>
 
 <style scoped lang="scss">
+/* Video Grid Wrap */
 .vgrid-wrap {
   display: flex;
   flex-direction: column;
@@ -670,81 +661,6 @@ watch(
 
     &.call-btn {
       background: rgba(34, 197, 94, 0.9);
-    }
-  }
-}
-
-/* Incoming call banner */
-.incoming-calls-banner {
-  position: absolute;
-  top: 100px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  z-index: 100000;
-  width: 90%;
-  max-width: 360px;
-}
-
-.incoming-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--bg-surface);
-  border: 1.5px solid var(--border-color);
-  border-radius: 12px;
-  padding: 10px 14px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
-}
-
-.ic-name {
-  flex: 1;
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.ring-anim {
-  color: #6366f1;
-  animation: ringPulse 0.8s ease-in-out infinite;
-}
-
-@keyframes ringPulse {
-  0%,
-  100% {
-    transform: scale(1) rotate(-10deg);
-  }
-  50% {
-    transform: scale(1.1) rotate(10deg);
-  }
-}
-
-.ic-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.78rem;
-
-  &.answer {
-    background: rgba(34, 197, 94, 0.15);
-    color: #22c55e;
-    &:hover {
-      background: rgba(34, 197, 94, 0.25);
-    }
-  }
-
-  &.decline {
-    background: rgba(239, 68, 68, 0.12);
-    color: #ef4444;
-    &:hover {
-      background: rgba(239, 68, 68, 0.22);
     }
   }
 }

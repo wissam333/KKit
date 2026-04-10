@@ -1,4 +1,20 @@
 {
+  "gameTitle": "سكاي آيسز",
+  "gameSubtitle": "قتال جوي — الحرب العالمية الأولى — متعدد اللاعبين",
+  "chooseAircraft": "اختر طائرتك",
+  "pilotsInHangar": "الطيارون في الحظيرة",
+  "readyUp": "جاهز",
+  "flySolo": "طيران فردي (ضد الذكاء الاصطناعي)",
+  "allPlayersReadyHint": "جميع اللاعبين جاهزون → تبدأ اللعبة تلقائياً",
+  "hp": "نقاط الحياة",
+  "ammo": "الذخيرة",
+  "kills": "قتل",
+  "victory": "انتصار!",
+  "defeated": "هزيمة",
+  "winsDogfight": "يفوز بالمعركة الجوية!",
+  "playAgain": "العب مرة أخرى",
+  "waiting": "…",
+  "games": "الألعاب",
   "gramkit": {
     "wrapped": {
       "title": "ملخص Telegram الخاص بك",
