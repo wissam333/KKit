@@ -2,7 +2,6 @@
   <div class="game-wrapper" ref="wrapperRef">
     <!-- ══════════════════ LOBBY ══════════════════ -->
     <div v-if="phase === 'lobby'" class="lobby-screen">
-      <!-- Animated sky background particles -->
       <div class="lobby-bg">
         <div
           v-for="i in 20"
@@ -58,9 +57,7 @@
                 </div>
               </div>
               <div class="pc-ability">
-                <span class="ability-tag">
-                  {{ abilityLabel(p.ability) }}
-                </span>
+                <span class="ability-tag">{{ abilityLabel(p.ability) }}</span>
               </div>
             </button>
           </div>
@@ -93,15 +90,15 @@
           </div>
         </div>
 
-        <!-- Controls hint -->
-        <div class="controls-hint">
+        <!-- Controls hint (desktop only) -->
+        <div class="controls-hint" v-if="!isMobile">
           <div class="ctrl-row">
             <kbd>W A S D</kbd><span>or</span><kbd>↑ ← ↓ →</kbd><span>fly</span>
             <kbd>SPACE</kbd><span>fire</span> <kbd>E</kbd><span>ability</span>
           </div>
         </div>
 
-        <!-- Actions -->
+        <!-- Lobby actions -->
         <div class="lobby-actions">
           <button
             class="btn-ready"
@@ -116,6 +113,15 @@
             🛩 FLY SOLO
           </button>
         </div>
+
+        <!-- Mobile: fullscreen CTA -->
+        <button
+          v-if="isMobile"
+          class="btn-fullscreen-lobby"
+          @click="toggle(wrapperRef)"
+        >
+          {{ isFullscreen ? "✕ EXIT FULLSCREEN" : "⛶ FULLSCREEN + LANDSCAPE" }}
+        </button>
 
         <p class="lobby-hint">All pilots ready → countdown begins</p>
       </div>
@@ -135,7 +141,7 @@
 
       <!-- HUD -->
       <div class="hud">
-        <!-- Left: HP + Ammo + Ability -->
+        <!-- Left: HP + Ammo + Ability (desktop) -->
         <div class="hud-left">
           <div class="hud-row">
             <span class="hud-lbl">HP</span>
@@ -151,17 +157,12 @@
             <span class="hud-lbl">AMM</span>
             <div class="bar-outer">
               <div
-                class="bar-inner"
-                :style="{
-                  width: (myAmmo / 30) * 100 + '%',
-                  background: '#ffd54f',
-                }"
+                class="bar-inner ammo"
+                :style="{ width: (myAmmo / 30) * 100 + '%' }"
               />
             </div>
-            <span class="bar-num" style="color: #ffd54f">{{ myAmmo }}</span>
+            <span class="bar-num ammo-num">{{ myAmmo }}</span>
           </div>
-
-          <!-- Ability cooldown -->
           <div class="ability-hud" :class="{ ready: myAbilityCd === 0 }">
             <span class="ability-hud-key">E</span>
             <div class="ability-hud-label">
@@ -195,7 +196,7 @@
           <div class="wave-badge" v-if="wave > 1">WAVE {{ wave }}</div>
         </div>
 
-        <!-- Right: Enemies -->
+        <!-- Right: Enemies + fullscreen toggle -->
         <div class="hud-right">
           <div v-for="(ep, idx) in enemyHuds" :key="idx" class="enemy-hud-item">
             <span class="eh-name">{{ ep.name }}</span>
@@ -203,14 +204,21 @@
               <div class="bar-inner enemy" :style="{ width: ep.hpPct + '%' }" />
             </div>
           </div>
+          <!-- Always-visible fullscreen toggle -->
+          <button
+            class="hud-fs-btn"
+            @click="toggle(wrapperRef)"
+            :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+          >
+            <span class="hud-fs-icon">{{ isFullscreen ? "⊡" : "⛶" }}</span>
+            <span class="hud-fs-lbl">{{ isFullscreen ? "EXIT" : "FULL" }}</span>
+          </button>
         </div>
       </div>
 
       <!-- Streak notification -->
       <transition name="streak">
-        <div v-if="streakVisible" class="streak-banner">
-          {{ streakText }}
-        </div>
+        <div v-if="streakVisible" class="streak-banner">{{ streakText }}</div>
       </transition>
 
       <!-- Floating texts -->
@@ -228,64 +236,94 @@
         {{ ft.text }}
       </div>
 
-      <!-- Controls hint -->
-      <div class="ctrl-hint">
-        <span>{{
-          isMobile
-            ? "🕹 Tap to fly · Fire btn · E = ability"
-            : "WASD/Arrows · SPACE fire · E ability"
-        }}</span>
+      <!-- Desktop controls hint -->
+      <div class="ctrl-hint" v-if="!isMobile">
+        WASD/Arrows · SPACE fire · E ability
       </div>
 
-      <!-- Mobile controls -->
-      <div v-if="isMobile" class="mobile-ctrl">
-        <div class="dpad">
-          <button
-            class="dpad-btn up"
-            @touchstart.prevent="mobileKey('up', true)"
-            @touchend.prevent="mobileKey('up', false)"
-          >
-            ▲
-          </button>
-          <button
-            class="dpad-btn down"
-            @touchstart.prevent="mobileKey('down', true)"
-            @touchend.prevent="mobileKey('down', false)"
-          >
-            ▼
-          </button>
-          <button
-            class="dpad-btn left"
-            @touchstart.prevent="mobileKey('left', true)"
-            @touchend.prevent="mobileKey('left', false)"
-          >
-            ◀
-          </button>
-          <button
-            class="dpad-btn right"
-            @touchstart.prevent="mobileKey('right', true)"
-            @touchend.prevent="mobileKey('right', false)"
-          >
-            ▶
-          </button>
+      <!-- ═══════════════════════════════════════════
+           MOBILE GAMEPAD
+           Left half  → virtual joystick (steer + thrust)
+           Right half → FIRE (big) + ABILITY (top)
+      ═══════════════════════════════════════════ -->
+      <template v-if="isMobile">
+        <!-- Portrait-mode overlay nudge -->
+        <div class="portrait-nudge" v-if="isPortrait">
+          <span>↻ Rotate for best experience</span>
         </div>
-        <div class="mobile-right-btns">
+
+        <!-- Left joystick zone — full left 45% height 55% bottom -->
+        <div
+          class="joystick-zone"
+          @touchstart.prevent="jsStart"
+          @touchmove.prevent="jsMove"
+          @touchend.prevent="jsEnd"
+          @touchcancel.prevent="jsEnd"
+        >
+          <!-- Static base ring -->
+          <div class="js-base" :style="jsBaseStyle">
+            <div class="js-ring" />
+            <div class="js-cardinal js-up">▲</div>
+            <div class="js-cardinal js-down">▼</div>
+            <div class="js-cardinal js-left">◀</div>
+            <div class="js-cardinal js-right">▶</div>
+            <!-- Moving knob -->
+            <div class="js-knob" :style="jsKnobStyle" />
+          </div>
+          <div class="js-idle-hint" v-if="!jsActive">
+            <div class="js-idle-ring" />
+            <span class="js-idle-label">STEER</span>
+          </div>
+        </div>
+
+        <!-- Right action zone -->
+        <div class="action-zone">
+          <!-- ABILITY — top, smaller, dims on cooldown -->
           <button
-            class="ability-btn"
+            class="btn-ability"
+            :class="{ 'btn-ability--ready': myAbilityCd === 0 }"
             @touchstart.prevent="mobileKey('ability', true)"
             @touchend.prevent="mobileKey('ability', false)"
+            @touchcancel.prevent="mobileKey('ability', false)"
           >
-            E
+            <span class="btn-ability__icon">⚡</span>
+            <span class="btn-ability__label">{{
+              abilityLabel(myAbilityName).split(" ").slice(1).join(" ")
+            }}</span>
+            <span class="btn-ability__cd" v-if="myAbilityCd > 0"
+              >{{ Math.ceil(myAbilityCd / 60) }}s</span
+            >
+            <span class="btn-ability__cd btn-ability__cd--ready" v-else
+              >RDY</span
+            >
+            <!-- Arc cooldown ring -->
+            <svg class="btn-ability__arc" viewBox="0 0 56 56">
+              <circle cx="28" cy="28" r="24" class="arc-track" />
+              <circle
+                cx="28"
+                cy="28"
+                r="24"
+                class="arc-fill"
+                :style="{
+                  strokeDashoffset:
+                    myAbilityMax > 0 ? 150.8 * (myAbilityCd / myAbilityMax) : 0,
+                }"
+              />
+            </svg>
           </button>
+
+          <!-- FIRE — big red, bottom -->
           <button
-            class="fire-btn"
+            class="btn-fire"
             @touchstart.prevent="mobileKey('fire', true)"
             @touchend.prevent="mobileKey('fire', false)"
+            @touchcancel.prevent="mobileKey('fire', false)"
           >
-            🔥
+            <span class="btn-fire__icon">🔥</span>
+            <span class="btn-fire__label">FIRE</span>
           </button>
         </div>
-      </div>
+      </template>
 
       <!-- Kill feed -->
       <div class="kill-feed">
@@ -348,6 +386,9 @@
 </template>
 
 <script setup>
+import { ref, computed, onMounted, onUnmounted } from "vue";
+import { useFullscreen } from "~/composables/useFullscreen";
+
 const props = defineProps({ room: { type: Object, required: true } });
 
 const wrapperRef = ref(null);
@@ -355,6 +396,15 @@ const canvasRef = ref(null);
 const canvasW = ref(900);
 const canvasH = ref(550);
 
+// ── Fullscreen ────────────────────────────────────────────────────────────────
+const {
+  isFullscreen,
+  toggle,
+  mount: fsMount,
+  unmount: fsUnmount,
+} = useFullscreen();
+
+// ── Game engine ───────────────────────────────────────────────────────────────
 const game = useSkymatch(props.room, canvasRef, canvasW, canvasH, wrapperRef);
 
 const {
@@ -386,12 +436,107 @@ const {
   startSolo,
   backToLobby,
   mobileKey,
+  planeTypes,
 } = game;
 
-onMounted(() => game.mount());
-onUnmounted(() => game.unmount());
+// ── Portrait detection ────────────────────────────────────────────────────────
+const isPortrait = ref(false);
+const checkOrientation = () => {
+  isPortrait.value = window.innerHeight > window.innerWidth;
+};
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// VIRTUAL JOYSTICK
+// The joystick base appears where the first touch lands (floating joystick),
+// and the knob tracks that touch within a clamped radius.
+// Directions map to WASD keys based on angle + magnitude threshold.
+// ══════════════════════════════════════════════════════════════════════════════
+const JOYSTICK_RADIUS = 52; // max knob travel in px
+const DEADZONE = 14; // ignore movements smaller than this
+
+const jsActive = ref(false);
+const jsOrigin = ref({ x: 0, y: 0 }); // where finger first landed (page coords)
+const jsDelta = ref({ x: 0, y: 0 }); // clamped knob offset
+
+// The base follows the touch origin so players can put thumb anywhere on left half
+const jsBaseStyle = computed(() => ({
+  left: jsOrigin.value.x + "px",
+  top: jsOrigin.value.y + "px",
+  opacity: jsActive.value ? 1 : 0,
+  transform: "translate(-50%, -50%)",
+}));
+
+const jsKnobStyle = computed(() => ({
+  transform: `translate(calc(-50% + ${jsDelta.value.x}px), calc(-50% + ${jsDelta.value.y}px))`,
+}));
+
+const jsStart = (e) => {
+  const t = e.changedTouches[0];
+  const rect = e.currentTarget.getBoundingClientRect();
+  jsOrigin.value = {
+    x: t.clientX - rect.left,
+    y: t.clientY - rect.top,
+  };
+  jsActive.value = true;
+  _jsUpdate(t, e.currentTarget);
+};
+
+const jsMove = (e) => {
+  if (!jsActive.value) return;
+  _jsUpdate(e.changedTouches[0], e.currentTarget);
+};
+
+const jsEnd = () => {
+  jsActive.value = false;
+  jsDelta.value = { x: 0, y: 0 };
+  mobileKey("up", false);
+  mobileKey("down", false);
+  mobileKey("left", false);
+  mobileKey("right", false);
+};
+
+const _jsUpdate = (touch, el) => {
+  const rect = el.getBoundingClientRect();
+  const rawX = touch.clientX - rect.left - jsOrigin.value.x;
+  const rawY = touch.clientY - rect.top - jsOrigin.value.y;
+  const dist = Math.hypot(rawX, rawY);
+
+  // Clamp knob travel
+  const clamp = Math.min(dist, JOYSTICK_RADIUS);
+  const angle = Math.atan2(rawY, rawX);
+  jsDelta.value = {
+    x: Math.cos(angle) * clamp,
+    y: Math.sin(angle) * clamp,
+  };
+
+  // Map to digital keys — left/right = rotate, up = thrust, down = brake
+  const active = dist > DEADZONE;
+  const nx = dist > 1 ? rawX / dist : 0; // normalised
+  const ny = dist > 1 ? rawY / dist : 0;
+
+  mobileKey("left", active && nx < -0.3);
+  mobileKey("right", active && nx > 0.3);
+  mobileKey("up", active && ny < -0.3);
+  mobileKey("down", active && ny > 0.3);
+};
+
+// ── Lifecycle ─────────────────────────────────────────────────────────────────
+onMounted(() => {
+  game.mount();
+  fsMount();
+  checkOrientation();
+  window.addEventListener("resize", checkOrientation);
+  window.addEventListener("orientationchange", checkOrientation);
+});
+
+onUnmounted(() => {
+  game.unmount();
+  fsUnmount();
+  window.removeEventListener("resize", checkOrientation);
+  window.removeEventListener("orientationchange", checkOrientation);
+});
+
+// ── Template helpers ──────────────────────────────────────────────────────────
 const abilityLabel = (id) =>
   ({
     roll: "🔄 BARREL ROLL",
@@ -420,7 +565,9 @@ const resParticleStyle = (i) => ({
 </script>
 
 <style scoped>
-/* ── Base ─────────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════
+   BASE
+═══════════════════════════════════════════════════════════ */
 .game-wrapper {
   width: 100%;
   height: 100%;
@@ -434,9 +581,17 @@ const resParticleStyle = (i) => ({
   font-family: "Courier New", monospace;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════════
+/* Fill viewport when in fullscreen */
+.game-wrapper:fullscreen,
+.game-wrapper:-webkit-full-screen {
+  width: 100vw !important;
+  height: 100svh !important;
+  min-height: unset;
+}
+
+/* ═══════════════════════════════════════════════════════════
    LOBBY
-══════════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════ */
 .lobby-screen {
   width: 100%;
   height: 100%;
@@ -445,10 +600,10 @@ const resParticleStyle = (i) => ({
   justify-content: center;
   background: radial-gradient(ellipse at 50% 0%, #0d2a50 0%, #04080f 65%);
   position: relative;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
-/* Animated star particles */
 .lobby-bg {
   position: absolute;
   inset: 0;
@@ -478,15 +633,16 @@ const resParticleStyle = (i) => ({
   padding: 24px 16px;
   max-width: 560px;
   width: 100%;
+  height: 100%;
 }
 
 .ww1-emblem {
   font-size: 54px;
   filter: drop-shadow(0 0 22px #4fc3f7cc);
-  animation: float 3.2s ease-in-out infinite;
+  animation: floatPlane 3.2s ease-in-out infinite;
   display: block;
 }
-@keyframes float {
+@keyframes floatPlane {
   0%,
   100% {
     transform: translateY(0) rotate(-6deg);
@@ -518,7 +674,6 @@ const resParticleStyle = (i) => ({
   text-transform: uppercase;
 }
 
-/* Sections */
 .section-block {
   margin-bottom: 16px;
 }
@@ -530,7 +685,6 @@ const resParticleStyle = (i) => ({
   text-transform: uppercase;
 }
 
-/* Plane grid */
 .plane-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -559,7 +713,7 @@ const resParticleStyle = (i) => ({
   background: linear-gradient(
     135deg,
     transparent 60%,
-    var(--accent, #4fc3f7) 18 100%
+    var(--accent, #4fc3f7) 100%
   );
   opacity: 0;
   transition: opacity 0.2s;
@@ -573,9 +727,7 @@ const resParticleStyle = (i) => ({
   border-color: var(--accent, #4fc3f7);
   background: #0c1628;
   color: #e0f2ff;
-  box-shadow:
-    0 0 14px var(--accent, #4fc3f7) 44,
-    inset 0 0 14px var(--accent, #4fc3f7) 0a;
+  box-shadow: 0 0 14px var(--accent, #4fc3f7) 44;
 }
 .plane-card.selected::before {
   opacity: 1;
@@ -638,7 +790,6 @@ const resParticleStyle = (i) => ({
   color: #90a4ae;
 }
 
-/* Pilot list */
 .pilot-list {
   display: flex;
   flex-direction: column;
@@ -684,7 +835,6 @@ const resParticleStyle = (i) => ({
   letter-spacing: 1px;
 }
 
-/* Controls hint in lobby */
 .controls-hint {
   margin: 10px 0 14px;
   padding: 8px 14px;
@@ -712,7 +862,6 @@ kbd {
   letter-spacing: 1px;
 }
 
-/* Lobby actions */
 .lobby-actions {
   display: flex;
   gap: 10px;
@@ -772,15 +921,37 @@ kbd {
   color: #04080f;
 }
 
+/* Mobile fullscreen button in lobby */
+.btn-fullscreen-lobby {
+  display: block;
+  width: 100%;
+  margin: 10px 0 6px;
+  padding: 11px;
+  background: transparent;
+  border: 1.5px dashed #4fc3f740;
+  border-radius: 6px;
+  color: #4fc3f770;
+  font-family: "Courier New", monospace;
+  font-size: 10px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-fullscreen-lobby:hover {
+  border-color: #4fc3f7;
+  color: #4fc3f7;
+  background: #0c1628;
+}
+
 .lobby-hint {
   font-size: 10px;
   color: #2a3a4a;
   letter-spacing: 2px;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════
    GAME SCREEN
-══════════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════ */
 .game-screen {
   position: relative;
   width: 100%;
@@ -788,17 +959,30 @@ kbd {
   display: flex;
   align-items: center;
   justify-content: center;
+  background: #04080f;
 }
 
 .game-canvas {
   display: block;
   max-width: 100%;
+  max-height: 100%;
   border: 1px solid #0f2a44;
   border-radius: 4px;
   image-rendering: crisp-edges;
 }
 
-/* HUD ─────────────────────────────────────────────────────────────────────── */
+/* On mobile the canvas fills the whole screen */
+@media (max-width: 768px) {
+  .game-canvas {
+    width: 100vw !important;
+    height: 100svh !important;
+    max-height: unset;
+    border: none;
+    border-radius: 0;
+  }
+}
+
+/* ── HUD ────────────────────────────────────────────────── */
 .hud {
   position: absolute;
   top: 8px;
@@ -806,17 +990,17 @@ kbd {
   right: 8px;
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: 10px;
   pointer-events: none;
+  z-index: 10;
 }
 
 .hud-left {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  min-width: 155px;
+  min-width: 148px;
 }
-
 .hud-row {
   display: flex;
   align-items: center;
@@ -829,6 +1013,7 @@ kbd {
   width: 28px;
   text-align: right;
 }
+
 .bar-outer {
   flex: 1;
   height: 7px;
@@ -847,6 +1032,9 @@ kbd {
     width 0.25s,
     background 0.35s;
 }
+.bar-inner.ammo {
+  background: #ffd54f;
+}
 .bar-inner.enemy {
   background: #ef5350;
 }
@@ -855,8 +1043,10 @@ kbd {
   color: #cfd8dc;
   min-width: 22px;
 }
+.ammo-num {
+  color: #ffd54f;
+}
 
-/* Ability HUD */
 .ability-hud {
   display: flex;
   align-items: center;
@@ -911,6 +1101,16 @@ kbd {
   font-weight: bold;
 }
 
+/* On mobile, collapse the left HUD slightly */
+@media (max-width: 768px) {
+  .hud-left {
+    min-width: 110px;
+  }
+  .ability-hud {
+    display: none;
+  } /* shown in action button instead */
+}
+
 .hud-center {
   flex: 1;
   text-align: center;
@@ -950,7 +1150,8 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 100px;
+  align-items: flex-end;
+  min-width: 90px;
 }
 .enemy-hud-item {
   display: flex;
@@ -960,13 +1161,48 @@ kbd {
 .eh-name {
   font-size: 9px;
   color: #ef9a9a;
-  min-width: 55px;
+  min-width: 50px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Streak banner */
+/* Fullscreen toggle in HUD — needs pointer events */
+.hud-fs-btn {
+  pointer-events: all;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 7px;
+  background: #04080fbb;
+  border: 1px solid #1e3a5f;
+  border-radius: 4px;
+  color: #4fc3f760;
+  font-family: "Courier New", monospace;
+  cursor: pointer;
+  transition: all 0.18s;
+  line-height: 1;
+  margin-top: 4px;
+}
+.hud-fs-icon {
+  font-size: 15px;
+}
+.hud-fs-lbl {
+  font-size: 7px;
+  letter-spacing: 1px;
+  color: #4fc3f750;
+}
+.hud-fs-btn:hover {
+  border-color: #4fc3f7;
+  color: #4fc3f7;
+  background: #0c1628bb;
+}
+.hud-fs-btn:hover .hud-fs-lbl {
+  color: #4fc3f7;
+}
+
+/* ── Streak / floating / hint ───────────────────────────── */
 .streak-banner {
   position: absolute;
   top: 50%;
@@ -980,7 +1216,7 @@ kbd {
     0 0 30px #ffeb3b,
     0 0 60px #ff6d00;
   pointer-events: none;
-  z-index: 10;
+  z-index: 15;
   white-space: nowrap;
 }
 .streak-enter-active {
@@ -1010,7 +1246,6 @@ kbd {
   }
 }
 
-/* Floating texts */
 .floating-text {
   position: absolute;
   pointer-events: none;
@@ -1024,10 +1259,9 @@ kbd {
   transition: opacity 0.1s;
 }
 
-/* Controls hint */
 .ctrl-hint {
   position: absolute;
-  bottom: 46px;
+  bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
   font-size: 9px;
@@ -1037,16 +1271,25 @@ kbd {
   white-space: nowrap;
 }
 
-/* Kill feed */
+/* ── Kill feed ──────────────────────────────────────────── */
 .kill-feed {
   position: absolute;
-  top: 55px;
+  top: 52px;
   right: 8px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 3px;
   pointer-events: none;
+  z-index: 8;
+  max-width: 220px;
+}
+@media (max-width: 768px) {
+  .kill-feed {
+    top: 48px;
+    right: 6px;
+    max-width: 160px;
+  }
 }
 .kf-item {
   background: #04080fcc;
@@ -1071,101 +1314,308 @@ kbd {
   transform: translateX(24px);
 }
 
-/* Mobile controls */
-.mobile-ctrl {
+/* ═══════════════════════════════════════════════════════════
+   PORTRAIT NUDGE (mobile only)
+═══════════════════════════════════════════════════════════ */
+.portrait-nudge {
   position: absolute;
-  bottom: 8px;
-  left: 0;
-  right: 0;
-  display: flex;
-  justify-content: space-between;
-  padding: 0 14px;
-  align-items: flex-end;
-}
-.dpad {
-  position: relative;
-  width: 96px;
-  height: 96px;
-}
-.dpad-btn {
-  position: absolute;
-  width: 32px;
-  height: 32px;
-  background: #0c1f3a;
-  border: 1px solid #4fc3f7;
-  border-radius: 5px;
-  color: #4fc3f7;
-  font-size: 13px;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  user-select: none;
-  touch-action: none;
-}
-.dpad-btn.up {
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-}
-.dpad-btn.down {
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-}
-.dpad-btn.left {
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-}
-.dpad-btn.right {
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  background: #04080fee;
+  z-index: 50;
+  font-size: 13px;
+  letter-spacing: 3px;
+  color: #4fc3f7;
+  pointer-events: none;
+  text-align: center;
+  padding: 20px;
 }
 
-.mobile-right-btns {
+/* ═══════════════════════════════════════════════════════════
+   MOBILE GAMEPAD
+   ┌─────────────────────────────────────────────────┐
+   │  [joystick zone — left 50%]  [action — right]  │
+   └─────────────────────────────────────────────────┘
+═══════════════════════════════════════════════════════════ */
+
+/* ── Joystick zone ──────────────────────────────────────── */
+.joystick-zone {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 50%;
+  height: 55%;
+  z-index: 20;
+  touch-action: none;
+  /* very subtle zone tint so player knows where to put thumb */
+  background: radial-gradient(
+    ellipse at 30% 70%,
+    #4fc3f708 0%,
+    transparent 65%
+  );
+}
+
+/* Floating joystick base — appears where thumb lands */
+.js-base {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+
+.js-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid #4fc3f730;
+  background: #04080f66;
+  backdrop-filter: blur(3px);
+}
+
+/* Cardinal direction arrows on ring */
+.js-cardinal {
+  position: absolute;
+  font-size: 9px;
+  color: #4fc3f730;
+  left: 50%;
+  top: 50%;
+  pointer-events: none;
+  line-height: 1;
+}
+.js-up {
+  transform: translate(-50%, -48px);
+}
+.js-down {
+  transform: translate(-50%, 38px);
+}
+.js-left {
+  transform: translate(-48px, -50%);
+}
+.js-right {
+  transform: translate(38px, -50%);
+}
+
+/* Moving knob */
+.js-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 36% 32%, #4fc3f7dd, #1565c0);
+  border: 2.5px solid #4fc3f7;
+  box-shadow:
+    0 0 20px #4fc3f755,
+    0 4px 12px #0008;
+  /* translate-x/y driven by jsKnobStyle */
+  transition: box-shadow 0.1s;
+  pointer-events: none;
+}
+
+/* Idle hint (shown before first touch) */
+.js-idle-hint {
+  position: absolute;
+  left: 50%;
+  top: 55%;
+  transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
-  gap: 8px;
   align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  opacity: 0.4;
 }
-
-.ability-btn {
-  width: 42px;
-  height: 42px;
-  background: #1a1800;
-  border: 2px solid #ffd54f;
-  border-radius: 8px;
-  color: #ffd54f;
-  font-family: "Courier New", monospace;
-  font-size: 13px;
-  font-weight: bold;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  user-select: none;
-  touch-action: none;
-}
-
-.fire-btn {
-  width: 58px;
-  height: 58px;
-  background: #1a0808;
-  border: 2px solid #ef5350;
+.js-idle-ring {
+  width: 68px;
+  height: 68px;
   border-radius: 50%;
-  color: #fff;
-  font-size: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  user-select: none;
-  touch-action: none;
-  box-shadow: 0 0 18px #ef535055;
+  border: 2px dashed #4fc3f7;
+  animation: idlePulse 2.2s ease-in-out infinite;
+}
+@keyframes idlePulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+}
+.js-idle-label {
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: #4fc3f7;
+  font-weight: bold;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════════
+/* ── Action zone (right side) ───────────────────────────── */
+.action-zone {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 50%;
+  height: 55%;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  padding: 18px 24px 22px;
+  touch-action: none;
+  pointer-events: none; /* individual buttons handle events */
+}
+
+/* ABILITY button */
+.btn-ability {
+  position: relative;
+  width: 66px;
+  height: 66px;
+  border-radius: 16px;
+  background: radial-gradient(circle at 38% 35%, #fff8dc, #e6a800);
+  border: 2.5px solid #ffd54f;
+  box-shadow:
+    0 0 18px #ffd54f33,
+    0 4px 14px #0007;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  font-family: "Courier New", monospace;
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  pointer-events: all;
+  opacity: 0.5;
+  transition:
+    opacity 0.25s,
+    transform 0.08s,
+    box-shadow 0.08s;
+  overflow: visible;
+}
+.btn-ability--ready {
+  opacity: 1;
+  box-shadow:
+    0 0 28px #ffd54f88,
+    0 4px 14px #0007;
+  animation: abilityPulse 1.4s ease-in-out infinite;
+}
+@keyframes abilityPulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 18px #ffd54f44,
+      0 4px 14px #0007;
+  }
+  50% {
+    box-shadow:
+      0 0 36px #ffd54fcc,
+      0 4px 14px #0007;
+  }
+}
+.btn-ability:active {
+  transform: scale(0.9);
+}
+
+.btn-ability__icon {
+  font-size: 20px;
+  line-height: 1;
+}
+.btn-ability__label {
+  font-size: 7px;
+  letter-spacing: 1px;
+  color: #5a3d00;
+  font-weight: bold;
+  text-align: center;
+  line-height: 1;
+  max-width: 54px;
+}
+.btn-ability__cd {
+  font-size: 8px;
+  color: #4a3000;
+  font-weight: bold;
+}
+.btn-ability__cd--ready {
+  color: #2a1a00;
+}
+
+/* SVG arc cooldown ring around ability button */
+.btn-ability__arc {
+  position: absolute;
+  inset: -5px;
+  width: calc(100% + 10px);
+  height: calc(100% + 10px);
+  pointer-events: none;
+  transform: rotate(-90deg);
+}
+.arc-track {
+  fill: none;
+  stroke: #ffffff18;
+  stroke-width: 3;
+}
+.arc-fill {
+  fill: none;
+  stroke: #ffd54f;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 150.8; /* 2π × 24 */
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 0.15s linear;
+}
+
+/* FIRE button */
+.btn-fire {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 35%, #ff7043, #b71c1c);
+  border: 3px solid #ef5350;
+  box-shadow:
+    0 0 28px #ef535055,
+    0 6px 18px #0009;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-family: "Courier New", monospace;
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  pointer-events: all;
+  transition:
+    transform 0.08s,
+    box-shadow 0.08s;
+}
+.btn-fire:active {
+  transform: scale(0.9);
+  box-shadow:
+    0 0 44px #ef5350aa,
+    0 2px 8px #000b;
+}
+.btn-fire__icon {
+  font-size: 34px;
+  line-height: 1;
+}
+.btn-fire__label {
+  font-size: 8px;
+  letter-spacing: 3px;
+  color: #ffcdd2cc;
+  font-weight: bold;
+}
+
+/* ═══════════════════════════════════════════════════════════
    RESULTS
-══════════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════ */
 .results-screen {
   width: 100%;
   height: 100%;
@@ -1177,7 +1627,6 @@ kbd {
   background: radial-gradient(ellipse at 50% 30%, #0d1f12 0%, #04080f 70%);
   overflow: hidden;
 }
-
 .results-bg {
   position: absolute;
   inset: 0;
@@ -1206,7 +1655,7 @@ kbd {
 }
 .res-trophy {
   font-size: 60px;
-  animation: float 2s ease-in-out infinite;
+  animation: floatPlane 2s ease-in-out infinite;
   display: block;
 }
 .res-title {
