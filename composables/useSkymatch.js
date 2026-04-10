@@ -1,5 +1,5 @@
 // composables/useSkymatch.js
-// Core game engine — extracted from component for clean architecture
+// Core game engine — fixed: planes now fly correctly
 
 import { ref, computed, nextTick, watch } from "vue";
 import { useGameSounds } from "./useGameSounds";
@@ -13,7 +13,8 @@ const AMMO_REGEN = 180;
 const AI_COUNT = 3;
 const CANVAS_BASE_W = 900;
 const CANVAS_BASE_H = 550;
-const POWERUP_SPAWN_INTERVAL = 480; // frames
+const POWERUP_SPAWN_INTERVAL = 480;
+
 const POWERUP_TYPES = [
   {
     id: "ammo",
@@ -96,7 +97,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
   const sounds = useGameSounds();
   const renderer = useGameRenderer(canvasRef, canvasW, canvasH);
 
-  // ── Reactive state ────────────────────────────────────────────────
+  // ── Reactive state ──────────────────────────────────────────────────────────
   const phase = ref("lobby");
   const chosenPlane = ref("sopwith");
   const imReady = ref(false);
@@ -113,15 +114,15 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
   const sortedFinalScores = ref([]);
   const streakText = ref("");
   const streakVisible = ref(false);
-  const floatingTexts = ref([]); // { id, text, x, y, color }
-  const wave = ref(1); // for solo difficulty scaling
+  const floatingTexts = ref([]);
+  const wave = ref(1);
 
   let gameState = null;
   let animId = null;
   let unsubscribe = null;
   let lobbyPingInterval = null;
 
-  // ── Input ─────────────────────────────────────────────────────────
+  // ── Input ───────────────────────────────────────────────────────────────────
   const keys = {
     up: false,
     down: false,
@@ -144,13 +145,13 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       e.preventDefault();
       keys.fire = val;
     }
-    if (["e", "E"].includes(e.key)) {
+    if (e.key === "e" || e.key === "E") {
       e.preventDefault();
       keys.ability = val;
     }
   };
 
-  // ── Computed ──────────────────────────────────────────────────────
+  // ── Computed ────────────────────────────────────────────────────────────────
   const myPlaneData = computed(
     () => planeTypes.find((p) => p.id === chosenPlane.value) || planeTypes[0],
   );
@@ -172,7 +173,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       }));
   });
 
-  // ── Lobby ─────────────────────────────────────────────────────────
+  // ── Lobby helpers ───────────────────────────────────────────────────────────
   const toggleReady = () => {
     sounds.uiClick();
     imReady.value = !imReady.value;
@@ -205,7 +206,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     startGame(true);
   };
 
-  // ── Start game ─────────────────────────────────────────────────────
+  // ── Start game ──────────────────────────────────────────────────────────────
   const startGame = (solo = false) => {
     if (phase.value === "playing") return;
     phase.value = "playing";
@@ -216,7 +217,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     const isSolo = solo || lobbyPlayers.value.length === 0;
     buildGameState(isSolo);
     room.broadcast({ type: "game-lobby", subtype: "start" });
-
     nextTick(() => nextTick(() => initCanvas()));
   };
 
@@ -232,13 +232,80 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     animId = requestAnimationFrame(gameLoop);
   };
 
-  // ── Build game state ───────────────────────────────────────────────
+  // ── _makePlane: ALL fields explicitly defaulted so nothing is ever undefined ─
+  const _makePlane = (opts) => {
+    const plane = {
+      // identity
+      id: "",
+      isMe: false,
+      isAI: false,
+      name: "",
+      planeId: "sopwith",
+      icon: "✈",
+      // position & physics — MUST be numbers
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      angle: 0,
+      speed: 4.0,
+      accel: 0.18,
+      drag: 0.97,
+      color: "#ffffff",
+      // health
+      hp: 100,
+      maxHp: 100,
+      // scoring
+      kills: 0,
+      assists: 0,
+      damageDealt: 0,
+      // weapons
+      ammo: MAX_AMMO,
+      reloadTimer: 0,
+      ammoTimer: 0,
+      // ability
+      ability: "roll",
+      abilityCd: 0,
+      abilityMaxCd: 240,
+      // state flags
+      dead: false,
+      respawnTimer: 0,
+      thrustOn: false,
+      trail: [],
+      // ability animations
+      invincible: false,
+      invincibleTimer: 0,
+      rolling: false,
+      rollAngle: 0,
+      speedBoost: false,
+      speedBoostTimer: 0,
+      burstActive: false,
+      burstCount: 0,
+      burstTimer: 0,
+      repairing: false,
+      repairTimer: 0,
+      // networking
+      targetX: null,
+      targetY: null,
+      lastSeen: 0,
+    };
+    // Override with caller's options
+    Object.assign(plane, opts);
+    return plane;
+  };
+
+  // ── Build game state ────────────────────────────────────────────────────────
   const buildGameState = (withAI) => {
+    // Ensure canvas is sized BEFORE reading W/H
+    resize();
+    const W = canvasW.value > 0 ? canvasW.value : CANVAS_BASE_W;
+    const H = canvasH.value > 0 ? canvasH.value : CANVAS_BASE_H;
+
     const pd = myPlaneData.value;
     const myId = room.myPeerId.value;
     const planes = [];
 
-    // My plane
+    // ── My plane ──
     planes.push(
       _makePlane({
         id: myId,
@@ -246,22 +313,25 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
         isAI: false,
         name: room.myName.value,
         planeId: chosenPlane.value,
+        icon: pd.icon,
         x: 80,
-        y: canvasH.value / 2,
+        y: H / 2,
+        vx: 0,
+        vy: 0,
         angle: 0,
         hp: pd.hp,
+        maxHp: pd.hp,
         speed: pd.speed,
         accel: pd.accel,
         drag: pd.drag,
         color: pd.color,
-        icon: pd.icon,
         ability: pd.ability,
         abilityCd: 0,
         abilityMaxCd: pd.abilityCd,
       }),
     );
 
-    // Remote humans
+    // ── Remote human planes ──
     const allColors = [
       "#e05a00",
       "#1976d2",
@@ -274,6 +344,8 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     lobbyPlayers.value.forEach((lp, i) => {
       const lpPlane =
         planeTypes.find((p) => p.id === lp.planeId) || planeTypes[1];
+      const sx = W - 80 - i * 40;
+      const sy = H / 2 + i * 60 - 30;
       planes.push(
         _makePlane({
           id: lp.peerId,
@@ -281,23 +353,28 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
           isAI: false,
           name: lp.name,
           planeId: lp.planeId,
-          x: canvasW.value - 80 - i * 40,
-          y: canvasH.value / 2 + i * 60 - 30,
+          icon: lp.planeIcon || "✈",
+          x: sx,
+          y: sy,
+          vx: 0,
+          vy: 0,
           angle: Math.PI,
           hp: lpPlane.hp,
+          maxHp: lpPlane.hp,
           speed: lpPlane.speed,
           accel: lpPlane.accel,
           drag: lpPlane.drag,
           color: allColors[(i + 1) % allColors.length],
-          icon: lp.planeIcon || "✈",
           ability: lpPlane.ability,
           abilityCd: 0,
           abilityMaxCd: lpPlane.abilityCd,
+          targetX: sx,
+          targetY: sy,
         }),
       );
     });
 
-    // AI enemies
+    // ── AI planes ──
     if (withAI || planes.length < 2) {
       const aiNames = [
         "Baron Von Richthofen",
@@ -316,15 +393,18 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
             isAI: true,
             name: aiNames[i % aiNames.length],
             planeId: "fokker",
-            x: canvasW.value - 80 - i * 50,
-            y: 80 + (i * (canvasH.value - 160)) / AI_COUNT,
+            icon: "🛩",
+            x: W - 80 - i * 50,
+            y: 80 + (i * (H - 160)) / AI_COUNT,
+            vx: 0,
+            vy: 0,
             angle: Math.PI,
             hp: 60,
+            maxHp: 60,
             speed: 3.0 + i * 0.3,
             accel: 0.15,
             drag: 0.97,
             color: aiColors[i % aiColors.length],
-            icon: "🛩",
             ability: "burst",
             abilityCd: 0,
             abilityMaxCd: 200,
@@ -341,18 +421,18 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       }
     }
 
-    // Clouds (two parallax layers)
+    // Clouds
     const clouds = [
-      ...Array.from({ length: 5 }, (_, i) => ({
-        x: Math.random() * canvasW.value,
+      ...Array.from({ length: 5 }, () => ({
+        x: Math.random() * W,
         y: 40 + Math.random() * 120,
         r: 35 + Math.random() * 55,
         spd: 0.35 + Math.random() * 0.25,
         alpha: 0.12 + Math.random() * 0.08,
         layer: 1,
       })),
-      ...Array.from({ length: 4 }, (_, i) => ({
-        x: Math.random() * canvasW.value,
+      ...Array.from({ length: 4 }, () => ({
+        x: Math.random() * W,
         y: 100 + Math.random() * 160,
         r: 25 + Math.random() * 35,
         spd: 0.18 + Math.random() * 0.15,
@@ -362,7 +442,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     ];
 
     const trees = Array.from({ length: 22 }, () => ({
-      x: Math.random() * canvasW.value,
+      x: Math.random() * W,
       h: 18 + Math.random() * 14,
     }));
 
@@ -379,35 +459,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     };
   };
 
-  const _makePlane = (opts) => ({
-    kills: 0,
-    assists: 0,
-    damageDealt: 0,
-    reloadTimer: 0,
-    ammoTimer: 0,
-    ammo: MAX_AMMO,
-    dead: false,
-    respawnTimer: 0,
-    trail: [],
-    thrustOn: false,
-    invincible: false,
-    invincibleTimer: 0,
-    rolling: false,
-    rollAngle: 0,
-    rollDir: 1,
-    speedBoost: false,
-    speedBoostTimer: 0,
-    burstActive: false,
-    burstCount: 0,
-    burstTimer: 0,
-    repairing: false,
-    repairTimer: 0,
-    targetX: null,
-    targetY: null, // for interpolation
-    ...opts,
-  });
-
-  // ── Game loop ──────────────────────────────────────────────────────
+  // ── Game loop ───────────────────────────────────────────────────────────────
   const gameLoop = () => {
     if (phase.value !== "playing" && phase.value !== "ending") return;
     update();
@@ -415,15 +467,17 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     animId = requestAnimationFrame(gameLoop);
   };
 
-  // ── Update ─────────────────────────────────────────────────────────
+  // ── Update ──────────────────────────────────────────────────────────────────
   const update = () => {
     const gs = gameState;
     gs.frame++;
+    const W = canvasW.value;
+    const H = canvasH.value;
 
-    // Clouds scroll
+    // Scroll clouds
     gs.clouds.forEach((c) => {
       c.x -= c.spd;
-      if (c.x < -120) c.x = canvasW.value + 80;
+      if (c.x < -120) c.x = W + 80;
     });
 
     // Power-up spawning
@@ -444,33 +498,32 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     // My plane
     const me = gs.planes.find((p) => p.isMe);
     if (me && !me.dead) {
-      updateMyPlane(me, gs);
+      updateMyPlane(me, gs, W, H);
       broadcastMyState(me);
     }
 
-    // Remote humans — interpolate positions smoothly
+    // Remote humans — smooth lerp toward broadcast position
     gs.planes
       .filter((p) => !p.isMe && !p.isAI && !p.dead)
       .forEach((p) => {
         if (p.targetX !== null) {
-          p.x += (p.targetX - p.x) * 0.28;
-          p.y += (p.targetY - p.y) * 0.28;
+          p.x += (p.targetX - p.x) * 0.25;
+          p.y += (p.targetY - p.y) * 0.25;
         }
-        // Mark dead if no update for too long
-        if (p.lastSeen && gs.frame - p.lastSeen > 180) {
-          p.dead = true;
-        }
+        if (p.lastSeen > 0 && gs.frame - p.lastSeen > 180) p.dead = true;
       });
 
     // AI
-    gs.planes.filter((p) => p.isAI && !p.dead).forEach((p) => updateAI(p, gs));
+    gs.planes
+      .filter((p) => p.isAI && !p.dead)
+      .forEach((p) => updateAI(p, gs, W, H));
 
-    // Respawn (AI only)
+    // Respawn AI only
     gs.planes
       .filter((p) => p.dead && p.isAI)
       .forEach((p) => {
         p.respawnTimer--;
-        if (p.respawnTimer <= 0) respawnPlane(p);
+        if (p.respawnTimer <= 0) respawnPlane(p, W, H);
       });
 
     // Bullets
@@ -478,35 +531,21 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       b.x += Math.cos(b.angle) * BULLET_SPEED;
       b.y += Math.sin(b.angle) * BULLET_SPEED;
       b.life--;
-      if (
-        b.life <= 0 ||
-        b.x < 0 ||
-        b.x > canvasW.value ||
-        b.y < 0 ||
-        b.y > canvasH.value
-      )
-        return false;
+      if (b.life <= 0 || b.x < 0 || b.x > W || b.y < 0 || b.y > H) return false;
 
+      // Only process damage for bullets owned by me or AI
       const myId = room.myPeerId.value;
-      const ownerIsMe = b.ownerId === myId || b.ownerId.startsWith("ai_");
-      if (!ownerIsMe) return true;
+      if (b.ownerId !== myId && !b.ownerId.startsWith("ai_")) return true;
 
       for (const plane of gs.planes) {
-        if (plane.id === b.ownerId || plane.dead) continue;
-        if (plane.invincible) continue; // barrel roll immunity
-        const dx = plane.x - b.x,
-          dy = plane.y - b.y;
-        if (Math.hypot(dx, dy) < 19) {
-          // Track assists — if we damage a plane someone else kills
+        if (plane.id === b.ownerId || plane.dead || plane.invincible) continue;
+        if (Math.hypot(plane.x - b.x, plane.y - b.y) < 19) {
           plane.hp -= b.dmg;
-          plane.damageDealt = (plane.damageDealt || 0) + b.dmg;
           spawnExplosion(b.x, b.y, false, gs);
-
           if (plane.isMe) {
             renderer.triggerShake(10);
             sounds.hit();
           }
-
           room.broadcast({
             type: "game-hit",
             victimId: plane.id,
@@ -530,28 +569,28 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       return e.life > 0;
     });
 
-    // Floating texts decay
+    // Floating text decay
     floatingTexts.value = floatingTexts.value.filter((t) => {
       t.life--;
       t.y -= 0.7;
       return t.life > 0;
     });
 
-    // Check end condition
+    // End condition
     if (phase.value === "playing") checkEndCondition(gs);
   };
 
-  // ── My plane control ───────────────────────────────────────────────
-  const updateMyPlane = (me, gs) => {
-    // Rotation
+  // ── Player plane movement ───────────────────────────────────────────────────
+  const updateMyPlane = (me, gs, W, H) => {
+    // Rotate
     if (keys.left) me.angle -= 0.045;
     if (keys.right) me.angle += 0.045;
 
-    // Thrust
-    me.thrustOn = keys.up;
+    // Thrust — always accelerate in facing direction when W/Up held
     const effectiveAccel = me.speedBoost ? me.accel * 1.8 : me.accel;
     const effectiveSpeed = me.speedBoost ? me.speed * 1.5 : me.speed;
 
+    me.thrustOn = keys.up;
     if (keys.up) {
       me.vx += Math.cos(me.angle) * effectiveAccel;
       me.vy += Math.sin(me.angle) * effectiveAccel;
@@ -561,25 +600,44 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       me.vy -= Math.sin(me.angle) * effectiveAccel * 0.5;
     }
 
+    // Drag
     me.vx *= me.drag;
     me.vy *= me.drag;
+
+    // Speed cap
     const spd = Math.hypot(me.vx, me.vy);
     if (spd > effectiveSpeed) {
-      me.vx *= effectiveSpeed / spd;
-      me.vy *= effectiveSpeed / spd;
+      me.vx = (me.vx / spd) * effectiveSpeed;
+      me.vy = (me.vy / spd) * effectiveSpeed;
     }
 
+    // Move
     me.x += me.vx;
     me.y += me.vy;
 
     // Wall bounce
-    _bounceWalls(me);
+    if (me.x < 22) {
+      me.x = 22;
+      me.vx = Math.abs(me.vx) * 0.5;
+    }
+    if (me.x > W - 22) {
+      me.x = W - 22;
+      me.vx = -Math.abs(me.vx) * 0.5;
+    }
+    if (me.y < 22) {
+      me.y = 22;
+      me.vy = Math.abs(me.vy) * 0.5;
+    }
+    if (me.y > H - 52) {
+      me.y = H - 52;
+      me.vy = -Math.abs(me.vy) * 0.5;
+    }
 
     // Trail
     me.trail.push({ x: me.x, y: me.y });
     if (me.trail.length > 16) me.trail.shift();
 
-    // Fire
+    // Ammo regen
     me.reloadTimer = Math.max(0, me.reloadTimer - 1);
     me.ammoTimer++;
     if (me.ammoTimer >= AMMO_REGEN && me.ammo < MAX_AMMO) {
@@ -598,12 +656,13 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       }
     }
 
+    // Normal fire
     if (keys.fire && me.reloadTimer === 0 && me.ammo > 0 && !me.burstActive) {
       fireBullet(me, gs);
       sounds.gunshot();
     }
 
-    // Ability — E key
+    // Ability (E)
     me.abilityCd = Math.max(0, me.abilityCd - 1);
     if (keys.ability && me.abilityCd === 0) {
       activateAbility(me, gs);
@@ -634,7 +693,15 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       if (me.repairTimer <= 0) me.repairing = false;
     }
 
-    // Sync refs
+    // Power-up collection
+    gs.powerUps
+      .filter((pu) => !pu.collected)
+      .forEach((pu) => {
+        if (Math.hypot(pu.x - me.x, pu.y - me.y) < 24)
+          collectPowerUp(me, pu, gs);
+      });
+
+    // Sync HUD refs
     myHp.value = me.hp;
     myAmmo.value = me.ammo;
     myAbilityCd.value = me.abilityCd;
@@ -642,32 +709,28 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     myAbilityName.value = me.ability;
   };
 
-  // ── Ability activation ─────────────────────────────────────────────
+  // ── Ability activation ──────────────────────────────────────────────────────
   const activateAbility = (plane, gs) => {
     plane.abilityCd = plane.abilityMaxCd;
     sounds.abilityUse();
-
     switch (plane.ability) {
-      case "roll": // Fokker — barrel roll, brief invincibility
+      case "roll":
         plane.invincible = true;
         plane.invincibleTimer = 45;
         pushFloatingText("BARREL ROLL!", plane.x, plane.y - 25, "#ffd54f");
         break;
-
-      case "burst": // Sopwith — 5-round burst
+      case "burst":
         plane.burstActive = true;
         plane.burstCount = 5;
         plane.burstTimer = 3;
         pushFloatingText("BURST FIRE!", plane.x, plane.y - 25, "#ef5350");
         break;
-
-      case "boost": // SPAD — speed boost 3s
+      case "boost":
         plane.speedBoost = true;
         plane.speedBoostTimer = 180;
         pushFloatingText("SPEED BOOST!", plane.x, plane.y - 25, "#ffd54f");
         break;
-
-      case "repair": // Albatros — gradual repair
+      case "repair":
         plane.repairing = true;
         plane.repairTimer = 120;
         pushFloatingText("REPAIRING...", plane.x, plane.y - 25, "#66bb6a");
@@ -675,15 +738,16 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     }
   };
 
-  // ── Power-ups ──────────────────────────────────────────────────────
+  // ── Power-ups ───────────────────────────────────────────────────────────────
   const spawnPowerUp = (gs) => {
+    const W = canvasW.value,
+      H = canvasH.value;
     const type =
       POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
-    const margin = 80;
     gs.powerUps.push({
       ...type,
-      x: margin + Math.random() * (canvasW.value - margin * 2),
-      y: 60 + Math.random() * (canvasH.value - 140),
+      x: 80 + Math.random() * (W - 160),
+      y: 60 + Math.random() * (H - 140),
       life: 600,
       maxLife: 600,
       phase: Math.random() * Math.PI * 2,
@@ -694,7 +758,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
   const collectPowerUp = (plane, pu, gs) => {
     pu.collected = true;
     sounds.powerUp();
-
     switch (pu.effect) {
       case "ammo":
         plane.ammo = MAX_AMMO;
@@ -714,17 +777,13 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     }
   };
 
-  // ── AI ─────────────────────────────────────────────────────────────
-  const updateAI = (ai, gs) => {
+  // ── AI update ───────────────────────────────────────────────────────────────
+  const updateAI = (ai, gs, W, H) => {
     const st = ai.aiState;
     st.fireTimer = Math.max(0, st.fireTimer - 1);
     ai.abilityCd = Math.max(0, ai.abilityCd - 1);
 
-    const W = canvasW.value,
-      H = canvasH.value;
     const MARGIN = 90;
-
-    // Wall repulsion
     let wallRepulse = 0,
       nearWall = false;
     if (ai.x < MARGIN) {
@@ -744,13 +803,12 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       nearWall = true;
     }
 
-    // Find team target (coordination: AIs share a preferred target)
+    // Team target coordination
     if (!gs.teamTarget || gs.planes.find((p) => p.id === gs.teamTarget)?.dead) {
-      const humanTargets = gs.planes.filter((p) => !p.isAI && !p.dead);
-      gs.teamTarget = humanTargets.length > 0 ? humanTargets[0].id : null;
+      const ht = gs.planes.filter((p) => !p.isAI && !p.dead);
+      gs.teamTarget = ht.length > 0 ? ht[0].id : null;
     }
 
-    // Find best individual target (closest, unless style overrides)
     const targets = gs.planes.filter((p) => p.id !== ai.id && !p.dead);
     if (!targets.length) return;
 
@@ -758,49 +816,40 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       bestDist = Infinity;
     targets.forEach((t) => {
       let d = Math.hypot(t.x - ai.x, t.y - ai.y);
-      // Style bias: sniper prefers distant shots, aggressive prefers close
       if (st.style === "sniper" && !t.isAI) d *= 0.7;
       if (st.style === "aggressive" && d < 200) d *= 0.6;
-      // Team coordination: prefer shared target
       if (t.id === gs.teamTarget && !t.isAI) d *= 0.75;
       if (d < bestDist) {
         bestDist = d;
         best = t;
       }
     });
+    if (!best) return;
 
-    // State machine — with personality bias
-    const myHpFrac = ai.hp / ai.maxHp;
-    if (myHpFrac < 0.2 && bestDist < 350 && st.style !== "aggressive") {
+    // State machine
+    const hpFrac = ai.hp / ai.maxHp;
+    if (hpFrac < 0.2 && bestDist < 350 && st.style !== "aggressive")
       st.state = "retreat";
-    } else if (bestDist < 130) {
+    else if (bestDist < 130)
       st.state = st.style === "aggressive" ? "attack" : "circle";
-    } else if (bestDist < 300 || st.style === "aggressive") {
-      st.state = "attack";
-    } else if (st.style === "sniper" && bestDist < 350) {
-      st.state = "attack"; // snipers engage from further
-    } else {
-      st.state = "chase";
-    }
+    else if (bestDist < 300 || st.style === "aggressive") st.state = "attack";
+    else st.state = "chase";
 
-    // Lead-aim with difficulty scaling (wave affects accuracy)
-    const waveAccuracy = Math.min(1.4, 1 + (wave.value - 1) * 0.15);
+    // Lead-aim
     const travelTime = bestDist / BULLET_SPEED;
-    const aimX = best.x + best.vx * travelTime * waveAccuracy;
-    const aimY = best.y + best.vy * travelTime * waveAccuracy;
+    const waveAcc = Math.min(1.4, 1 + (wave.value - 1) * 0.15);
+    const aimX = best.x + best.vx * travelTime * waveAcc;
+    const aimY = best.y + best.vy * travelTime * waveAcc;
     const toTargetAngle = Math.atan2(aimY - ai.y, aimX - ai.x);
-    const awayAngle = toTargetAngle + Math.PI;
 
     let desiredAngle;
     if (nearWall) {
-      const cx = W / 2,
-        cy = H / 2;
-      desiredAngle = Math.atan2(cy - ai.y, cx - ai.x) + wallRepulse * 0.5;
+      desiredAngle = Math.atan2(H / 2 - ai.y, W / 2 - ai.x) + wallRepulse * 0.5;
     } else if (st.state === "retreat") {
-      desiredAngle = awayAngle + (Math.random() - 0.5) * 0.7;
+      desiredAngle = toTargetAngle + Math.PI + (Math.random() - 0.5) * 0.7;
     } else if (st.state === "circle") {
-      const side = ai.id.endsWith("0") ? 1 : -1;
-      desiredAngle = toTargetAngle + Math.PI * 0.5 * side;
+      desiredAngle =
+        toTargetAngle + Math.PI * 0.5 * (ai.id.endsWith("0") ? 1 : -1);
     } else {
       st.wanderAngle = _normalizeAngle(
         st.wanderAngle + (Math.random() - 0.5) * 0.07,
@@ -808,16 +857,15 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       desiredAngle = toTargetAngle + st.wanderAngle * 0.12;
     }
 
-    // Turn rate scales with wave difficulty
     const baseTurnRate = nearWall ? 0.13 : st.turnSpd;
     const waveTurn = baseTurnRate * Math.min(1.5, 1 + (wave.value - 1) * 0.08);
     const da = _normalizeAngle(desiredAngle - ai.angle);
     ai.angle += Math.sign(da) * Math.min(Math.abs(da), waveTurn);
     ai.angle = _normalizeAngle(ai.angle);
 
-    // Thrust
+    // Thrust & velocity
     ai.thrustOn = !(st.state === "circle" && bestDist < 100);
-    const effectiveSpeed = ai.speedBoost ? ai.speed * 1.4 : ai.speed;
+    const effSpd = ai.speedBoost ? ai.speed * 1.4 : ai.speed;
     if (ai.thrustOn) {
       ai.vx += Math.cos(ai.angle) * ai.accel;
       ai.vy += Math.sin(ai.angle) * ai.accel;
@@ -828,9 +876,9 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     ai.vx *= ai.drag;
     ai.vy *= ai.drag;
     const spd = Math.hypot(ai.vx, ai.vy);
-    if (spd > effectiveSpeed) {
-      ai.vx *= effectiveSpeed / spd;
-      ai.vy *= effectiveSpeed / spd;
+    if (spd > effSpd) {
+      ai.vx = (ai.vx / spd) * effSpd;
+      ai.vy = (ai.vy / spd) * effSpd;
     }
     if (spd < 0.5 && ai.thrustOn) {
       ai.vx += Math.cos(ai.angle) * 0.5;
@@ -840,7 +888,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     ai.x += ai.vx;
     ai.y += ai.vy;
 
-    // Hard clamp
+    // Hard wall clamp
     const PAD = 25;
     if (ai.x < PAD) {
       ai.x = PAD;
@@ -862,7 +910,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     ai.trail.push({ x: ai.x, y: ai.y });
     if (ai.trail.length > 16) ai.trail.shift();
 
-    // Check power-up collection
+    // Power-up pickup
     gs.powerUps
       .filter((pu) => !pu.collected)
       .forEach((pu) => {
@@ -870,24 +918,24 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
           collectPowerUp(ai, pu, gs);
       });
 
-    // Firing — accuracy scales with wave and style
+    // Firing
     const baseAimErr = st.style === "sniper" ? 0.16 : 0.24;
-    const waveAimErr = Math.max(0.08, baseAimErr - (wave.value - 1) * 0.02);
+    const waveErr = Math.max(0.08, baseAimErr - (wave.value - 1) * 0.02);
     const aimErr = Math.abs(_normalizeAngle(toTargetAngle - ai.angle));
-    const canFire = st.fireTimer === 0 && ai.ammo > 0;
-    const maxFireDist = st.style === "sniper" ? 320 : 270;
-    const goodShot =
-      bestDist < maxFireDist && aimErr < waveAimErr && st.state !== "retreat";
-    if (canFire && goodShot) {
+    const maxDist = st.style === "sniper" ? 320 : 270;
+    if (
+      st.fireTimer === 0 &&
+      ai.ammo > 0 &&
+      bestDist < maxDist &&
+      aimErr < waveErr &&
+      st.state !== "retreat"
+    ) {
       fireBullet(ai, gs);
-      const baseFireCd = st.style === "aggressive" ? 14 : 20;
-      st.fireTimer = baseFireCd + Math.random() * 16;
+      st.fireTimer = (st.style === "aggressive" ? 14 : 20) + Math.random() * 16;
     }
 
-    // AI ability use
-    if (ai.abilityCd === 0 && Math.random() < 0.01) {
-      activateAbility(ai, gs);
-    }
+    // AI ability
+    if (ai.abilityCd === 0 && Math.random() < 0.008) activateAbility(ai, gs);
 
     ai.reloadTimer = Math.max(0, ai.reloadTimer - 1);
     ai.ammoTimer++;
@@ -895,15 +943,13 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       ai.ammo++;
       ai.ammoTimer = 0;
     }
-
-    // Speed boost timer
     if (ai.speedBoostTimer > 0) {
       ai.speedBoostTimer--;
       if (ai.speedBoostTimer <= 0) ai.speedBoost = false;
     }
   };
 
-  // ── Fire ───────────────────────────────────────────────────────────
+  // ── Fire bullet ─────────────────────────────────────────────────────────────
   const fireBullet = (plane, gs) => {
     if (plane.reloadTimer > 0 || plane.ammo <= 0) return;
     plane.ammo--;
@@ -920,7 +966,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     });
   };
 
-  // ── Kill / respawn ─────────────────────────────────────────────────
+  // ── Kill / respawn ──────────────────────────────────────────────────────────
   const killPlane = (plane, killerId, gs) => {
     if (plane.dead) return;
     spawnExplosion(plane.x, plane.y, true, gs);
@@ -936,44 +982,30 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     if (killer?.isMe) {
       killer.kills++;
       myKills.value = killer.kills;
-
-      // Streak detection
-      const streak = killer.kills;
-      if (streak === 3) showStreak("HAT TRICK! 🎯");
-      else if (streak === 5) showStreak("ON FIRE! 🔥");
-      else if (streak === 7) showStreak("UNSTOPPABLE! ⚡");
-      else if (streak % 5 === 0 && streak > 7)
-        showStreak(`${streak} KILLS! 💀`);
-
+      const s = killer.kills;
+      if (s === 3) showStreak("HAT TRICK! 🎯");
+      else if (s === 5) showStreak("ON FIRE! 🔥");
+      else if (s === 7) showStreak("UNSTOPPABLE! ⚡");
+      else if (s % 5 === 0 && s > 7) showStreak(`${s} KILLS! 💀`);
       sounds.kill();
     } else if (killer && !killer.isMe && !killer.isAI) {
       killer.kills++;
     }
 
-    // Assist credit: anyone who dealt damage but didn't kill
-    if (!killer?.isAI) {
-      gs.planes
-        .filter((p) => p.id !== killerId && !p.isAI && p.damageDealt > 0)
-        .forEach((p) => {
-          p.assists = (p.assists || 0) + 1;
-        });
-    }
-
     if (plane.isMe) {
       renderer.triggerShake(20);
       sounds.explosion(true);
-      pushKillFeed("You were shot down! ✈💥");
-    } else {
-      sounds.explosion(true);
-    }
+      pushKillFeed("✈ You were shot down!");
+    } else sounds.explosion(true);
+
     pushKillFeed(`${killName} ↯ ${plane.name}`);
   };
 
-  const respawnPlane = (plane) => {
+  const respawnPlane = (plane, W, H) => {
     plane.dead = false;
     plane.hp = plane.maxHp;
-    plane.x = 40 + Math.random() * (canvasW.value - 80);
-    plane.y = 40 + Math.random() * (canvasH.value - 100);
+    plane.x = 40 + Math.random() * (W - 80);
+    plane.y = 40 + Math.random() * (H - 100);
     plane.vx = 0;
     plane.vy = 0;
     plane.angle = Math.random() * Math.PI * 2;
@@ -997,35 +1029,18 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     });
   };
 
-  // ── Power-up collision (player) ────────────────────────────────────
-  const checkPowerUpCollision = (me, gs) => {
-    gs.powerUps
-      .filter((pu) => !pu.collected)
-      .forEach((pu) => {
-        if (Math.hypot(pu.x - me.x, pu.y - me.y) < 22)
-          collectPowerUp(me, pu, gs);
-      });
-  };
-
-  // ── End condition ──────────────────────────────────────────────────
+  // ── End condition ───────────────────────────────────────────────────────────
   const checkEndCondition = (gs) => {
     const humanPlanes = gs.planes.filter((p) => !p.isAI);
     const aliveHumans = humanPlanes.filter((p) => !p.dead);
-    const isMultiplayer = humanPlanes.length > 1;
+    const isMulti = humanPlanes.length > 1;
 
-    if (isMultiplayer) {
-      if (aliveHumans.length <= 1 && humanPlanes.length > 1) endGame(gs);
+    if (isMulti) {
+      if (aliveHumans.length <= 1) endGame(gs);
     } else {
       const me = gs.planes.find((p) => p.isMe);
       const aliveEnemies = gs.planes.filter((p) => !p.isMe && !p.dead);
-      if (!me || me.dead || aliveEnemies.length === 0) {
-        if (aliveEnemies.length === 0) {
-          wave.value++;
-          // In solo, spawn next wave instead of ending — for now just end game
-          // Future: reset AI positions and respawn for next wave
-        }
-        endGame(gs);
-      }
+      if (!me || me.dead || aliveEnemies.length === 0) endGame(gs);
     }
   };
 
@@ -1055,16 +1070,14 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
 
     const isWinner = resultsWinner.value === room.myName.value;
     setTimeout(() => {
-      if (isWinner) sounds.victory();
-      else sounds.defeat();
+      isWinner ? sounds.victory() : sounds.defeat();
     }, 300);
-
     setTimeout(() => {
       phase.value = "results";
     }, 1800);
   };
 
-  // ── Networking ─────────────────────────────────────────────────────
+  // ── Networking ──────────────────────────────────────────────────────────────
   const broadcastMyState = (me) => {
     if (gameState.frame % 2 !== 0) return;
     room.broadcast({
@@ -1079,11 +1092,10 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       kills: me.kills,
       thrustOn: me.thrustOn,
       trail: me.trail.slice(-6),
-      frame: gameState.frame,
     });
   };
 
-  const handleNetworkMessage = (data, fromPeerId) => {
+  const handleNetworkMessage = (data) => {
     if (data.type === "game-lobby") {
       if (data.subtype === "ping") {
         if (!room.myPeerId.value) return;
@@ -1116,7 +1128,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
             name: data.name,
           });
           lobbyPlayers.value = [...lobbyPlayers.value];
-        } else {
+        } else
           lobbyPlayers.value.push({
             peerId: data.peerId,
             name: data.name,
@@ -1124,7 +1136,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
             planeIcon: data.planeIcon,
             ready: data.ready,
           });
-        }
         checkAllReady();
         return;
       }
@@ -1140,7 +1151,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
         cancelAnimationFrame(animId);
         gameState = null;
         setTimeout(broadcastLobby, 200);
-        return;
       }
       return;
     }
@@ -1150,7 +1160,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     if (data.type === "game-state") {
       const p = gameState.planes.find((pl) => pl.id === data.id);
       if (p && !p.isMe) {
-        // Use interpolation target instead of direct set
         p.targetX = data.x;
         p.targetY = data.y;
         p.angle = data.angle;
@@ -1186,7 +1195,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     }
   };
 
-  // ── Kill feed / floating text ──────────────────────────────────────
+  // ── Kill feed / floating text ────────────────────────────────────────────────
   const pushKillFeed = (text) => {
     const id = Date.now() + Math.random();
     killFeed.value.push({ id, text });
@@ -1196,11 +1205,14 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
   };
 
   const pushFloatingText = (text, x, y, color = "#fff") => {
-    const id = Date.now() + Math.random();
-    floatingTexts.value.push({ id, text, x, y, color, life: 80 });
-    setTimeout(() => {
-      floatingTexts.value = floatingTexts.value.filter((t) => t.id !== id);
-    }, 1500);
+    floatingTexts.value.push({
+      id: Date.now() + Math.random(),
+      text,
+      x,
+      y,
+      color,
+      life: 80,
+    });
   };
 
   const showStreak = (text) => {
@@ -1211,7 +1223,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     }, 2200);
   };
 
-  // ── Back to lobby ──────────────────────────────────────────────────
+  // ── Back to lobby ────────────────────────────────────────────────────────────
   const backToLobby = () => {
     sounds.uiClick();
     cancelAnimationFrame(animId);
@@ -1230,35 +1242,34 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     }, 300);
   };
 
-  // ── Resize ─────────────────────────────────────────────────────────
+  // ── Resize ───────────────────────────────────────────────────────────────────
   const resize = () => {
     isMobile.value = window.innerWidth < 640;
     if (!wrapperRef.value) return;
     const rect = wrapperRef.value.getBoundingClientRect();
+    if (rect.width === 0) return;
     const w = Math.min(rect.width, CANVAS_BASE_W);
     const h = Math.round(w * (CANVAS_BASE_H / CANVAS_BASE_W));
     canvasW.value = w;
     canvasH.value = h;
   };
 
-  // ── Lifecycle ──────────────────────────────────────────────────────
+  // ── Lifecycle ─────────────────────────────────────────────────────────────────
   const mount = () => {
     resize();
     window.addEventListener("resize", resize);
     window.addEventListener("keydown", (e) => onKey(e, true));
     window.addEventListener("keyup", (e) => onKey(e, false));
 
-    unsubscribe = room.onMessage((data, fromPeerId) =>
-      handleNetworkMessage(data, fromPeerId),
-    );
+    unsubscribe = room.onMessage((data) => handleNetworkMessage(data));
 
     watch(
       () => room.members?.value,
       (members, prev) => {
         if (phase.value !== "lobby") return;
         const prevIds = (prev || []).map((m) => m.peerId);
-        const hasNew = members?.some((m) => !prevIds.includes(m.peerId));
-        if (hasNew) setTimeout(broadcastLobby, 200);
+        if (members?.some((m) => !prevIds.includes(m.peerId)))
+          setTimeout(broadcastLobby, 200);
       },
       { deep: true },
     );
@@ -1292,36 +1303,15 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     if (unsubscribe) unsubscribe();
   };
 
-  // ── Utils ──────────────────────────────────────────────────────────
+  // ── Utilities ─────────────────────────────────────────────────────────────────
   const _normalizeAngle = (a) => {
     while (a > Math.PI) a -= Math.PI * 2;
     while (a < -Math.PI) a += Math.PI * 2;
     return a;
   };
 
-  const _bounceWalls = (plane) => {
-    if (plane.x < 22) {
-      plane.x = 22;
-      plane.vx = Math.abs(plane.vx) * 0.5;
-    }
-    if (plane.x > canvasW.value - 22) {
-      plane.x = canvasW.value - 22;
-      plane.vx = -Math.abs(plane.vx) * 0.5;
-    }
-    if (plane.y < 22) {
-      plane.y = 22;
-      plane.vy = Math.abs(plane.vy) * 0.5;
-    }
-    if (plane.y > canvasH.value - 52) {
-      plane.y = canvasH.value - 52;
-      plane.vy = -Math.abs(plane.vy) * 0.5;
-    }
-    // Check power-up collection on movement
-    if (gameState) checkPowerUpCollision(plane, gameState);
-  };
-
+  // ── Public API ─────────────────────────────────────────────────────────────────
   return {
-    // State
     phase,
     chosenPlane,
     imReady,
@@ -1340,14 +1330,12 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     streakVisible,
     floatingTexts,
     wave,
-    // Computed
     myPlaneData,
     myPlaneIcon,
     myHpPct,
     hpColor,
     canStartSolo,
     enemyHuds,
-    // Methods
     toggleReady,
     startSolo,
     backToLobby,
@@ -1355,7 +1343,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     mount,
     unmount,
     resize,
-    // Constants
-    planeTypes: planeTypes,
+    planeTypes,
   };
 }

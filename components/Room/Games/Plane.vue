@@ -739,7 +739,6 @@ kbd {
   content: "";
   position: absolute;
   inset: 0;
-  background: #4fc3f7;
   transform: translateX(-100%);
   transition: transform 0.2s;
 }
