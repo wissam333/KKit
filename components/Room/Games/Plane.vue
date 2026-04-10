@@ -10,13 +10,11 @@
           :style="starStyle(i)"
         />
       </div>
-
       <div class="lobby-inner">
         <div class="ww1-emblem">✈</div>
         <h1 class="game-title">SKY<span class="title-accent">ACES</span></h1>
         <p class="game-sub">WW1 AERIAL COMBAT · MULTIPLAYER</p>
 
-        <!-- Plane picker -->
         <div class="section-block">
           <p class="section-label">◈ CHOOSE YOUR AIRCRAFT ◈</p>
           <div class="plane-grid">
@@ -63,7 +61,6 @@
           </div>
         </div>
 
-        <!-- Pilot list -->
         <div class="section-block">
           <p class="section-label">
             ◈ HANGAR ({{ lobbyPlayers.length + 1 }}) ◈
@@ -90,7 +87,6 @@
           </div>
         </div>
 
-        <!-- Controls hint (desktop only) -->
         <div class="controls-hint" v-if="!isMobile">
           <div class="ctrl-row">
             <kbd>W A S D</kbd><span>or</span><kbd>↑ ← ↓ →</kbd><span>fly</span>
@@ -98,7 +94,6 @@
           </div>
         </div>
 
-        <!-- Lobby actions -->
         <div class="lobby-actions">
           <button
             class="btn-ready"
@@ -114,7 +109,6 @@
           </button>
         </div>
 
-        <!-- Mobile: fullscreen CTA -->
         <button
           v-if="isMobile"
           class="btn-fullscreen-lobby"
@@ -141,7 +135,6 @@
 
       <!-- HUD -->
       <div class="hud">
-        <!-- Left: HP + Ammo + Ability (desktop) -->
         <div class="hud-left">
           <div class="hud-row">
             <span class="hud-lbl">HP</span>
@@ -186,7 +179,6 @@
           </div>
         </div>
 
-        <!-- Center: Kills + Wave -->
         <div class="hud-center">
           <div class="kill-counter">
             <span class="kill-icon">✈</span>
@@ -196,7 +188,6 @@
           <div class="wave-badge" v-if="wave > 1">WAVE {{ wave }}</div>
         </div>
 
-        <!-- Right: Enemies + fullscreen toggle -->
         <div class="hud-right">
           <div v-for="(ep, idx) in enemyHuds" :key="idx" class="enemy-hud-item">
             <span class="eh-name">{{ ep.name }}</span>
@@ -204,7 +195,6 @@
               <div class="bar-inner enemy" :style="{ width: ep.hpPct + '%' }" />
             </div>
           </div>
-          <!-- Always-visible fullscreen toggle -->
           <button
             class="hud-fs-btn"
             @click="toggle(wrapperRef)"
@@ -236,23 +226,24 @@
         {{ ft.text }}
       </div>
 
-      <!-- Desktop controls hint -->
       <div class="ctrl-hint" v-if="!isMobile">
         WASD/Arrows · SPACE fire · E ability
       </div>
 
       <!-- ═══════════════════════════════════════════
            MOBILE GAMEPAD
-           Left half  → virtual joystick (steer + thrust)
-           Right half → FIRE (big) + ABILITY (top)
       ═══════════════════════════════════════════ -->
       <template v-if="isMobile">
-        <!-- Portrait-mode overlay nudge -->
         <div class="portrait-nudge" v-if="isPortrait">
           <span>↻ Rotate for best experience</span>
         </div>
 
-        <!-- Left joystick zone — full left 45% height 55% bottom -->
+        <!--
+          JOYSTICK ZONE
+          Covers left 50%, bottom 55%.
+          Touch events are on this zone; we track touch ID so
+          fire/ability buttons on the right never confuse it.
+        -->
         <div
           class="joystick-zone"
           @touchstart.prevent="jsStart"
@@ -260,25 +251,38 @@
           @touchend.prevent="jsEnd"
           @touchcancel.prevent="jsEnd"
         >
-          <!-- Static base ring -->
+          <!-- Idle hint: visible only when no touch active -->
+          <transition name="fade-hint">
+            <div class="js-idle-hint" v-if="!jsActive">
+              <div class="js-idle-ring" />
+              <span class="js-idle-label">STEER</span>
+            </div>
+          </transition>
+
+          <!--
+            Floating joystick base: snaps to where thumb lands.
+            Always rendered; opacity driven by jsActive so there's
+            no flash / invisible-element issue.
+          -->
           <div class="js-base" :style="jsBaseStyle">
             <div class="js-ring" />
             <div class="js-cardinal js-up">▲</div>
             <div class="js-cardinal js-down">▼</div>
             <div class="js-cardinal js-left">◀</div>
             <div class="js-cardinal js-right">▶</div>
-            <!-- Moving knob -->
+            <!-- Knob: position driven by jsDelta -->
             <div class="js-knob" :style="jsKnobStyle" />
-          </div>
-          <div class="js-idle-hint" v-if="!jsActive">
-            <div class="js-idle-ring" />
-            <span class="js-idle-label">STEER</span>
+            <!-- Direction indicator arc -->
+            <div
+              class="js-direction-arc"
+              :style="jsDirectionArcStyle"
+              v-if="jsActive && jsMoving"
+            />
           </div>
         </div>
 
         <!-- Right action zone -->
         <div class="action-zone">
-          <!-- ABILITY — top, smaller, dims on cooldown -->
           <button
             class="btn-ability"
             :class="{ 'btn-ability--ready': myAbilityCd === 0 }"
@@ -296,7 +300,6 @@
             <span class="btn-ability__cd btn-ability__cd--ready" v-else
               >RDY</span
             >
-            <!-- Arc cooldown ring -->
             <svg class="btn-ability__arc" viewBox="0 0 56 56">
               <circle cx="28" cy="28" r="24" class="arc-track" />
               <circle
@@ -312,7 +315,6 @@
             </svg>
           </button>
 
-          <!-- FIRE — big red, bottom -->
           <button
             class="btn-fire"
             @touchstart.prevent="mobileKey('fire', true)"
@@ -356,7 +358,6 @@
           {{ resultsWinner === room.myName.value ? "VICTORY!" : "DEFEATED" }}
         </h2>
         <p class="res-sub">{{ resultsWinner }} claims the skies!</p>
-
         <div class="scoreboard">
           <div class="sb-header">
             <span>RANK</span><span>PILOT</span><span>KILLS</span
@@ -376,7 +377,6 @@
             <span class="sr-assists">{{ p.assists || 0 }}</span>
           </div>
         </div>
-
         <button class="btn-ready active" @click="backToLobby">
           ↩ PLAY AGAIN
         </button>
@@ -406,7 +406,6 @@ const {
 
 // ── Game engine ───────────────────────────────────────────────────────────────
 const game = useSkymatch(props.room, canvasRef, canvasW, canvasH, wrapperRef);
-
 const {
   phase,
   chosenPlane,
@@ -446,76 +445,133 @@ const checkOrientation = () => {
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// VIRTUAL JOYSTICK
-// The joystick base appears where the first touch lands (floating joystick),
-// and the knob tracks that touch within a clamped radius.
-// Directions map to WASD keys based on angle + magnitude threshold.
+// VIRTUAL JOYSTICK — FIXED
+//
+// Key fixes vs previous version:
+//  1. Touch ID tracking: we lock to the first touch's identifier in jsStart
+//     so right-side buttons can't accidentally steal the joystick touch.
+//  2. Coordinate math uses clientX/Y only — no getBoundingClientRect offset
+//     needed for the delta calc since we store origin in client space too.
+//  3. jsBaseStyle uses client-space origin minus the zone's rect so the base
+//     renders at the correct spot even in fullscreen.
+//  4. jsActive drives visibility; the base is always in the DOM so there's
+//     no mount/unmount flash.
+//  5. jsMoving flag for the direction arc (only show when thumb is dragged).
+//  6. Released keys are cleared in jsEnd regardless of active state.
 // ══════════════════════════════════════════════════════════════════════════════
-const JOYSTICK_RADIUS = 52; // max knob travel in px
-const DEADZONE = 14; // ignore movements smaller than this
+const JOYSTICK_RADIUS = 56; // max knob travel in px
+const DEADZONE = 12; // ignore tiny movements
 
 const jsActive = ref(false);
-const jsOrigin = ref({ x: 0, y: 0 }); // where finger first landed (page coords)
-const jsDelta = ref({ x: 0, y: 0 }); // clamped knob offset
+const jsMoving = ref(false); // true once thumb moves beyond deadzone
+const jsTouchId = ref(null); // locked touch identifier
+const jsOriginClient = ref({ x: 0, y: 0 }); // origin in CLIENT (viewport) coords
+const jsOriginZone = ref({ x: 0, y: 0 }); // origin relative to zone element
+const jsDelta = ref({ x: 0, y: 0 }); // clamped knob offset in px
+const jsAngle = ref(0); // radians, for direction arc
 
-// The base follows the touch origin so players can put thumb anywhere on left half
+// Base floats to where thumb landed (zone-relative for CSS positioning)
 const jsBaseStyle = computed(() => ({
-  left: jsOrigin.value.x + "px",
-  top: jsOrigin.value.y + "px",
-  opacity: jsActive.value ? 1 : 0,
+  position: "absolute",
+  left: jsOriginZone.value.x + "px",
+  top: jsOriginZone.value.y + "px",
   transform: "translate(-50%, -50%)",
+  opacity: jsActive.value ? 1 : 0,
+  // scale-in animation when thumb lands
+  transition: jsActive.value ? "opacity 0.08s" : "opacity 0.18s",
 }));
 
+// Knob offsets from the base center
 const jsKnobStyle = computed(() => ({
   transform: `translate(calc(-50% + ${jsDelta.value.x}px), calc(-50% + ${jsDelta.value.y}px))`,
 }));
 
+// Tiny wedge arc that shows the current thrust direction
+const jsDirectionArcStyle = computed(() => ({
+  transform: `translate(-50%, -50%) rotate(${jsAngle.value}rad)`,
+  opacity: jsMoving.value ? 0.6 : 0,
+}));
+
+// ── Touch handlers ────────────────────────────────────────────────────────────
+
 const jsStart = (e) => {
+  // If already tracking a touch on the joystick, ignore new ones
+  if (jsActive.value) return;
+
   const t = e.changedTouches[0];
   const rect = e.currentTarget.getBoundingClientRect();
-  jsOrigin.value = {
-    x: t.clientX - rect.left,
-    y: t.clientY - rect.top,
-  };
+
+  jsTouchId.value = t.identifier;
+  jsOriginClient.value = { x: t.clientX, y: t.clientY };
+  jsOriginZone.value = { x: t.clientX - rect.left, y: t.clientY - rect.top };
   jsActive.value = true;
-  _jsUpdate(t, e.currentTarget);
+  jsMoving.value = false;
+
+  // Process the initial touch position (treat as if already moved)
+  _jsUpdate(t);
 };
 
 const jsMove = (e) => {
   if (!jsActive.value) return;
-  _jsUpdate(e.changedTouches[0], e.currentTarget);
+
+  // Find the touch we're tracking by ID
+  const t = Array.from(e.changedTouches).find(
+    (t) => t.identifier === jsTouchId.value,
+  );
+  if (!t) return;
+
+  _jsUpdate(t);
 };
 
-const jsEnd = () => {
+const jsEnd = (e) => {
+  if (!jsActive.value) return;
+
+  // Only release if our tracked touch ended
+  const released = Array.from(e.changedTouches).some(
+    (t) => t.identifier === jsTouchId.value,
+  );
+  if (!released && e.type !== "touchcancel") return;
+
   jsActive.value = false;
+  jsMoving.value = false;
+  jsTouchId.value = null;
   jsDelta.value = { x: 0, y: 0 };
+
+  // Release all directional keys
   mobileKey("up", false);
   mobileKey("down", false);
   mobileKey("left", false);
   mobileKey("right", false);
 };
 
-const _jsUpdate = (touch, el) => {
-  const rect = el.getBoundingClientRect();
-  const rawX = touch.clientX - rect.left - jsOrigin.value.x;
-  const rawY = touch.clientY - rect.top - jsOrigin.value.y;
+const _jsUpdate = (touch) => {
+  // Delta is always relative to where the thumb first landed (client space)
+  const rawX = touch.clientX - jsOriginClient.value.x;
+  const rawY = touch.clientY - jsOriginClient.value.y;
   const dist = Math.hypot(rawX, rawY);
 
-  // Clamp knob travel
+  // Clamp knob travel to radius
   const clamp = Math.min(dist, JOYSTICK_RADIUS);
   const angle = Math.atan2(rawY, rawX);
+
+  jsAngle.value = angle;
   jsDelta.value = {
     x: Math.cos(angle) * clamp,
     y: Math.sin(angle) * clamp,
   };
 
-  // Map to digital keys — left/right = rotate, up = thrust, down = brake
   const active = dist > DEADZONE;
-  const nx = dist > 1 ? rawX / dist : 0; // normalised
+  jsMoving.value = active;
+
+  // Normalised direction (safe div)
+  const nx = dist > 1 ? rawX / dist : 0;
   const ny = dist > 1 ? rawY / dist : 0;
 
-  mobileKey("left", active && nx < -0.3);
-  mobileKey("right", active && nx > 0.3);
+  // Diagonal-aware thresholds:
+  //   Left/right rotate the plane — threshold 0.25 for responsive turning
+  //   Up = thrust forward, down = brake/reverse — threshold 0.3
+  mobileKey("left", active && nx < -0.25);
+  mobileKey("right", active && nx > 0.25);
   mobileKey("up", active && ny < -0.3);
   mobileKey("down", active && ny > 0.3);
 };
@@ -580,8 +636,6 @@ const resParticleStyle = (i) => ({
   overflow: hidden;
   font-family: "Courier New", monospace;
 }
-
-/* Fill viewport when in fullscreen */
 .game-wrapper:fullscreen,
 .game-wrapper:-webkit-full-screen {
   width: 100vw !important;
@@ -603,7 +657,6 @@ const resParticleStyle = (i) => ({
   overflow-x: hidden;
   overflow-y: auto;
 }
-
 .lobby-bg {
   position: absolute;
   inset: 0;
@@ -625,7 +678,6 @@ const resParticleStyle = (i) => ({
     transform: scale(1.8);
   }
 }
-
 .lobby-inner {
   position: relative;
   z-index: 1;
@@ -635,7 +687,6 @@ const resParticleStyle = (i) => ({
   width: 100%;
   height: 100%;
 }
-
 .ww1-emblem {
   font-size: 54px;
   filter: drop-shadow(0 0 22px #4fc3f7cc);
@@ -651,7 +702,6 @@ const resParticleStyle = (i) => ({
     transform: translateY(-12px) rotate(6deg);
   }
 }
-
 .game-title {
   font-size: clamp(30px, 7vw, 56px);
   color: #e0f2ff;
@@ -665,7 +715,6 @@ const resParticleStyle = (i) => ({
 .title-accent {
   color: #4fc3f7;
 }
-
 .game-sub {
   font-size: 10px;
   color: #546e7a;
@@ -673,7 +722,6 @@ const resParticleStyle = (i) => ({
   margin: 3px 0 22px;
   text-transform: uppercase;
 }
-
 .section-block {
   margin-bottom: 16px;
 }
@@ -684,13 +732,11 @@ const resParticleStyle = (i) => ({
   margin-bottom: 10px;
   text-transform: uppercase;
 }
-
 .plane-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 8px;
 }
-
 .plane-card {
   background: #080e1a;
   border: 1.5px solid #1e3a5f;
@@ -727,12 +773,10 @@ const resParticleStyle = (i) => ({
   border-color: var(--accent, #4fc3f7);
   background: #0c1628;
   color: #e0f2ff;
-  box-shadow: 0 0 14px var(--accent, #4fc3f7) 44;
 }
 .plane-card.selected::before {
   opacity: 1;
 }
-
 .pc-icon {
   font-size: 24px;
 }
@@ -742,7 +786,6 @@ const resParticleStyle = (i) => ({
   letter-spacing: 1.5px;
   text-transform: uppercase;
 }
-
 .pc-stats {
   width: 100%;
   display: flex;
@@ -772,7 +815,6 @@ const resParticleStyle = (i) => ({
   border-radius: 2px;
   transition: width 0.3s;
 }
-
 .pc-ability {
   margin-top: 2px;
 }
@@ -785,11 +827,6 @@ const resParticleStyle = (i) => ({
   border-radius: 3px;
   color: #607d8b;
 }
-.plane-card.selected .ability-tag {
-  border-color: var(--accent, #4fc3f7) 66;
-  color: #90a4ae;
-}
-
 .pilot-list {
   display: flex;
   flex-direction: column;
@@ -834,7 +871,6 @@ const resParticleStyle = (i) => ({
   font-size: 10px;
   letter-spacing: 1px;
 }
-
 .controls-hint {
   margin: 10px 0 14px;
   padding: 8px 14px;
@@ -861,14 +897,12 @@ kbd {
   color: #78909c;
   letter-spacing: 1px;
 }
-
 .lobby-actions {
   display: flex;
   gap: 10px;
   justify-content: center;
   margin-bottom: 10px;
 }
-
 .btn-ready {
   padding: 11px 30px;
   background: #0c1f3a;
@@ -903,7 +937,6 @@ kbd {
 .btn-ready.active .btn-inner {
   color: #04080f;
 }
-
 .btn-solo {
   padding: 11px 18px;
   background: #0a1a0a;
@@ -920,8 +953,6 @@ kbd {
   background: #66bb6a;
   color: #04080f;
 }
-
-/* Mobile fullscreen button in lobby */
 .btn-fullscreen-lobby {
   display: block;
   width: 100%;
@@ -942,7 +973,6 @@ kbd {
   color: #4fc3f7;
   background: #0c1628;
 }
-
 .lobby-hint {
   font-size: 10px;
   color: #2a3a4a;
@@ -961,7 +991,6 @@ kbd {
   justify-content: center;
   background: #04080f;
 }
-
 .game-canvas {
   display: block;
   max-width: 100%;
@@ -970,8 +999,6 @@ kbd {
   border-radius: 4px;
   image-rendering: crisp-edges;
 }
-
-/* On mobile the canvas fills the whole screen */
 @media (max-width: 768px) {
   .game-canvas {
     width: 100vw !important;
@@ -994,7 +1021,6 @@ kbd {
   pointer-events: none;
   z-index: 10;
 }
-
 .hud-left {
   display: flex;
   flex-direction: column;
@@ -1013,7 +1039,6 @@ kbd {
   width: 28px;
   text-align: right;
 }
-
 .bar-outer {
   flex: 1;
   height: 7px;
@@ -1046,7 +1071,6 @@ kbd {
 .ammo-num {
   color: #ffd54f;
 }
-
 .ability-hud {
   display: flex;
   align-items: center;
@@ -1100,17 +1124,14 @@ kbd {
   color: #ffd54f;
   font-weight: bold;
 }
-
-/* On mobile, collapse the left HUD slightly */
 @media (max-width: 768px) {
   .hud-left {
     min-width: 110px;
   }
   .ability-hud {
     display: none;
-  } /* shown in action button instead */
+  }
 }
-
 .hud-center {
   flex: 1;
   text-align: center;
@@ -1145,7 +1166,6 @@ kbd {
   display: inline-block;
   margin-top: 3px;
 }
-
 .hud-right {
   display: flex;
   flex-direction: column;
@@ -1166,8 +1186,6 @@ kbd {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-/* Fullscreen toggle in HUD — needs pointer events */
 .hud-fs-btn {
   pointer-events: all;
   display: flex;
@@ -1245,7 +1263,6 @@ kbd {
     transform: translate(-50%, -60%) scale(0.8);
   }
 }
-
 .floating-text {
   position: absolute;
   pointer-events: none;
@@ -1258,7 +1275,6 @@ kbd {
   white-space: nowrap;
   transition: opacity 0.1s;
 }
-
 .ctrl-hint {
   position: absolute;
   bottom: 10px;
@@ -1305,17 +1321,14 @@ kbd {
 .kf-leave-active {
   transition: all 0.3s;
 }
-.kf-enter-from {
-  opacity: 0;
-  transform: translateX(24px);
-}
+.kf-enter-from,
 .kf-leave-to {
   opacity: 0;
   transform: translateX(24px);
 }
 
 /* ═══════════════════════════════════════════════════════════
-   PORTRAIT NUDGE (mobile only)
+   PORTRAIT NUDGE
 ═══════════════════════════════════════════════════════════ */
 .portrait-nudge {
   position: absolute;
@@ -1335,9 +1348,6 @@ kbd {
 
 /* ═══════════════════════════════════════════════════════════
    MOBILE GAMEPAD
-   ┌─────────────────────────────────────────────────┐
-   │  [joystick zone — left 50%]  [action — right]  │
-   └─────────────────────────────────────────────────┘
 ═══════════════════════════════════════════════════════════ */
 
 /* ── Joystick zone ──────────────────────────────────────── */
@@ -1348,75 +1358,99 @@ kbd {
   width: 50%;
   height: 55%;
   z-index: 20;
+  /* CRITICAL: touch-action none stops the browser from stealing
+     scroll/zoom gestures — required for reliable joystick on mobile */
   touch-action: none;
-  /* very subtle zone tint so player knows where to put thumb */
+  /* subtle zone tint */
   background: radial-gradient(
     ellipse at 30% 70%,
     #4fc3f708 0%,
     transparent 65%
   );
+  /* Needed for absolute children to position inside zone */
+  position: absolute;
 }
 
-/* Floating joystick base — appears where thumb lands */
+/* Floating base — snaps to where thumb lands */
 .js-base {
   position: absolute;
-  width: 120px;
-  height: 120px;
+  width: 128px;
+  height: 128px;
   pointer-events: none;
-  transition: opacity 0.12s;
+  /* will-change prevents repaint jank on translate */
+  will-change: transform, opacity;
 }
 
 .js-ring {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  border: 2px solid #4fc3f730;
-  background: #04080f66;
-  backdrop-filter: blur(3px);
+  border: 2px solid #4fc3f738;
+  background: #04080f55;
+  backdrop-filter: blur(4px);
+  /* Subtle glow when active */
+  box-shadow: 0 0 24px #4fc3f718 inset;
 }
 
-/* Cardinal direction arrows on ring */
+/* Cardinal direction labels */
 .js-cardinal {
   position: absolute;
   font-size: 9px;
-  color: #4fc3f730;
+  color: #4fc3f728;
   left: 50%;
   top: 50%;
   pointer-events: none;
   line-height: 1;
+  user-select: none;
 }
 .js-up {
-  transform: translate(-50%, -48px);
+  transform: translate(-50%, -50px);
 }
 .js-down {
   transform: translate(-50%, 38px);
 }
 .js-left {
-  transform: translate(-48px, -50%);
+  transform: translate(-50px, -50%);
 }
 .js-right {
   transform: translate(38px, -50%);
 }
 
-/* Moving knob */
+/* Knob */
 .js-knob {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 46px;
-  height: 46px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  background: radial-gradient(circle at 36% 32%, #4fc3f7dd, #1565c0);
+  background: radial-gradient(circle at 36% 32%, #4fc3f7ee, #1565c0);
   border: 2.5px solid #4fc3f7;
   box-shadow:
-    0 0 20px #4fc3f755,
-    0 4px 12px #0008;
-  /* translate-x/y driven by jsKnobStyle */
-  transition: box-shadow 0.1s;
+    0 0 22px #4fc3f766,
+    0 4px 14px #0009;
   pointer-events: none;
+  will-change: transform;
+  /* smooth knob trailing */
+  transition: box-shadow 0.1s;
 }
 
-/* Idle hint (shown before first touch) */
+/* Direction arc indicator — a small wedge-shaped div */
+.js-direction-arc {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 56px solid #4fc3f722;
+  transform-origin: center bottom;
+  pointer-events: none;
+  transition: opacity 0.1s;
+}
+
+/* Idle hint */
 .js-idle-hint {
   position: absolute;
   left: 50%;
@@ -1454,7 +1488,19 @@ kbd {
   font-weight: bold;
 }
 
-/* ── Action zone (right side) ───────────────────────────── */
+/* Fade transition for idle hint */
+.fade-hint-enter-active {
+  transition: opacity 0.15s;
+}
+.fade-hint-leave-active {
+  transition: opacity 0.25s;
+}
+.fade-hint-enter-from,
+.fade-hint-leave-to {
+  opacity: 0;
+}
+
+/* ── Action zone ────────────────────────────────────────── */
 .action-zone {
   position: absolute;
   right: 0;
@@ -1469,15 +1515,15 @@ kbd {
   gap: 14px;
   padding: 18px 24px 22px;
   touch-action: none;
-  pointer-events: none; /* individual buttons handle events */
+  pointer-events: none;
 }
 
 /* ABILITY button */
 .btn-ability {
   position: relative;
-  width: 66px;
-  height: 66px;
-  border-radius: 16px;
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
   background: radial-gradient(circle at 38% 35%, #fff8dc, #e6a800);
   border: 2.5px solid #ffd54f;
   box-shadow:
@@ -1522,11 +1568,10 @@ kbd {
   }
 }
 .btn-ability:active {
-  transform: scale(0.9);
+  transform: scale(0.88);
 }
-
 .btn-ability__icon {
-  font-size: 20px;
+  font-size: 22px;
   line-height: 1;
 }
 .btn-ability__label {
@@ -1546,13 +1591,11 @@ kbd {
 .btn-ability__cd--ready {
   color: #2a1a00;
 }
-
-/* SVG arc cooldown ring around ability button */
 .btn-ability__arc {
   position: absolute;
-  inset: -5px;
-  width: calc(100% + 10px);
-  height: calc(100% + 10px);
+  inset: -6px;
+  width: calc(100% + 12px);
+  height: calc(100% + 12px);
   pointer-events: none;
   transform: rotate(-90deg);
 }
@@ -1566,15 +1609,15 @@ kbd {
   stroke: #ffd54f;
   stroke-width: 3;
   stroke-linecap: round;
-  stroke-dasharray: 150.8; /* 2π × 24 */
+  stroke-dasharray: 150.8;
   stroke-dashoffset: 0;
   transition: stroke-dashoffset 0.15s linear;
 }
 
 /* FIRE button */
 .btn-fire {
-  width: 90px;
-  height: 90px;
+  width: 96px;
+  height: 96px;
   border-radius: 50%;
   background: radial-gradient(circle at 38% 35%, #ff7043, #b71c1c);
   border: 3px solid #ef5350;
@@ -1597,13 +1640,13 @@ kbd {
     box-shadow 0.08s;
 }
 .btn-fire:active {
-  transform: scale(0.9);
+  transform: scale(0.88);
   box-shadow:
     0 0 44px #ef5350aa,
     0 2px 8px #000b;
 }
 .btn-fire__icon {
-  font-size: 34px;
+  font-size: 36px;
   line-height: 1;
 }
 .btn-fire__label {
@@ -1644,7 +1687,6 @@ kbd {
     transform: translateY(-20px) rotate(15deg);
   }
 }
-
 .results-inner {
   position: relative;
   z-index: 1;
@@ -1678,7 +1720,6 @@ kbd {
   letter-spacing: 2px;
   margin-bottom: 20px;
 }
-
 .scoreboard {
   margin-bottom: 20px;
   display: flex;
