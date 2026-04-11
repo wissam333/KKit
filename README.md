@@ -5,7 +5,7 @@
 # KKit
 
 **A free, open-source Swiss Army knife for the web.**
-Screen sharing · Video calls · Whiteboard · Telegram tools — all in one app, zero cost, zero servers.
+Screen sharing · Video calls · Whiteboard · Telegram tools · Multiplayer games — all in one app, zero cost, zero servers.
 
 [![Nuxt](https://img.shields.io/badge/Nuxt-3-00DC82?style=flat-square&logo=nuxt.js)](https://nuxt.com)
 [![Vue](https://img.shields.io/badge/Vue-3-4FC08D?style=flat-square&logo=vue.js)](https://vuejs.org)
@@ -23,7 +23,7 @@ Screen sharing · Video calls · Whiteboard · Telegram tools — all in one app
 
 KKit is a **fully self-hosted, serverless toolbox** built with Nuxt 3. It replaces a stack of paid SaaS tools with a single open-source app that you deploy once and use forever — for free.
 
-All real-time features (screen share, video calls, whiteboard, chat) run **peer-to-peer via WebRTC**. Your server never touches the data stream. Your hosting bill doesn't change whether you use it zero times or ten thousand times.
+All real-time features (screen share, video calls, whiteboard, chat, and multiplayer games) run **peer-to-peer via WebRTC**. Your server never touches the data stream. Your hosting bill doesn't change whether you use it zero times or ten thousand times.
 
 ---
 
@@ -41,6 +41,37 @@ Create or join a room instantly with a unique link. No accounts, no installs —
 | 💬 **Chat**         | In-room text messaging and file sharing — images, videos, PDFs, documents, and more.                        |
 
 > All Mirror Room features work across **different networks and devices** — powered by WebRTC + PeerJS. Your data flows directly browser-to-browser.
+
+---
+
+### ✈️ SkyAces — WW1 Multiplayer Aerial Combat
+
+A fully peer-to-peer multiplayer game built directly into KKit — no game servers, no matchmaking services, no downloads. Just share your room link and fly.
+
+```
+Players join your room → pick their aircraft → ready up → dogfight!
+All game state syncs directly peer-to-peer via WebRTC.
+```
+
+| Feature                  | Description                                                                                         |
+| ------------------------ | --------------------------------------------------------------------------------------------------- |
+| 🛩️ **4 Aircraft**        | Fokker Dr.I, Sopwith Camel, SPAD XIII, and Albatros D.V — each with unique speed, HP, and abilities |
+| ⚡ **Special Abilities** | Barrel Roll (invincibility), Burst Fire, Speed Boost, and Field Repair                              |
+| 🤖 **AI Opponents**      | 3 AI pilots with distinct styles — aggressive, defensive, and sniper                                |
+| 🔴 **Power-ups**         | Ammo refills, repair kits, and speed boosts spawn dynamically on the battlefield                    |
+| 📱 **Mobile Support**    | Full touch controls with a floating joystick and action buttons — works in landscape fullscreen     |
+| 🏆 **Kill Streaks**      | Hat Trick, On Fire, Unstoppable — streak banners and a live kill feed                               |
+| 📊 **Scoreboard**        | Post-match results with kills and assists ranked for all players                                    |
+| 🔗 **P2P Multiplayer**   | Game state, bullets, hits, and power-ups all sync over WebRTC — zero servers involved               |
+
+**Controls:**
+
+| Platform | Steer         | Fire      | Ability   |
+| -------- | ------------- | --------- | --------- |
+| Desktop  | WASD / ↑←↓→   | SPACE     | E         |
+| Mobile   | Left joystick | 🔥 button | ⚡ button |
+
+> SkyAces is fully framerate-independent and runs entirely in the browser using the Canvas API — no game engine, no WebGL required.
 
 ---
 
@@ -72,6 +103,7 @@ Connect your Telegram account once using your own API credentials and unlock a s
 | Video Calls                 | ✅ Unlimited | ⏱️ 40min limit | 💰 Paid    | —         |
 | Whiteboard                  | ✅ Free      | 💰 Paid        | —          | 💰 $10/mo |
 | In-room Chat & File Sharing | ✅ Free      | 💰 Paid        | —          | —         |
+| Multiplayer Games           | ✅ Free      | ❌ No          | ❌ No      | ❌ No     |
 | Self-hosted                 | ✅ Yes       | ❌ No          | ❌ No      | ❌ No     |
 | No account needed           | ✅ Yes       | ❌ No          | ❌ No      | ❌ No     |
 | Open source                 | ✅ Yes       | ❌ No          | ❌ No      | ❌ No     |
@@ -85,6 +117,7 @@ Connect your Telegram account once using your own API credentials and unlock a s
 - **[PeerJS](https://peerjs.com)** — WebRTC abstraction for P2P connections
 - **[GramJS](https://github.com/gram-js/gramjs)** — Telegram MTProto client running entirely in the browser
 - **[WebRTC](https://webrtc.org)** — Browser-native peer-to-peer media streaming
+- **Canvas API** — Game rendering for SkyAces (no WebGL or game engine dependency)
 - **SCSS** — Scoped component styles with CSS custom properties for dark/light theming
 - **[@vite-pwa/nuxt](https://vite-pwa-org.netlify.app/frameworks/nuxt)** — Installable PWA with auto-update and offline support
 - **[@nuxtjs/i18n](https://i18n.nuxtjs.org)** — Arabic (RTL) + English (LTR) support built in
@@ -150,6 +183,27 @@ directly browser → browser. Your server sees nothing.
 
 ---
 
+## ✈️ SkyAces — How It Works
+
+```
+Players join a Mirror Room → navigate to SkyAces
+              ↓
+Each player picks an aircraft and readies up in the lobby
+              ↓
+All players ready → 800ms countdown → game starts simultaneously
+              ↓
+The peer with the lowest-sorted ID becomes host
+              ↓
+Host spawns power-ups and broadcasts them to all peers
+              ↓
+Each client simulates bullets and AI locally
+Hits, kills, and game state sync over existing WebRTC connections
+              ↓
+Last pilot standing wins — results screen shown to all
+```
+
+---
+
 ## 🔐 GramKit — Security Model
 
 GramKit uses the **official Telegram API** (MTProto) through GramJS running entirely in your browser.
@@ -191,6 +245,9 @@ kkit/
 │   └── Home/               # Landing page components
 ├── composables/
 │   ├── useRoom.js          # WebRTC room logic via PeerJS (video, chat, whiteboard)
+│   ├── useSkymatch.js      # SkyAces game engine (physics, AI, networking, power-ups)
+│   ├── useGameRenderer.js  # SkyAces Canvas 2D rendering (planes, bullets, explosions)
+│   ├── useGameSounds.js    # SkyAces audio (gunshots, explosions, abilities)
 │   ├── useTelegram.js      # GramJS Telegram client session management
 │   ├── useTheme.js         # Dark/light mode + color palette switcher
 │   └── ...

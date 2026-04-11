@@ -721,7 +721,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       me.repairTimer -= dt;
       me.repairTickTimer += dt;
       // Tick every ~0.133s (8 frames at 60fps)
-      if (me.repairTickTimer >= 8 / 60 && me.hp < me.maxHp) {
+      if (me.repairTickTimer >= 8 && me.hp < me.maxHp) {
         me.repairTickTimer = 0;
         me.hp = Math.min(me.maxHp, me.hp + 3);
       }
@@ -829,7 +829,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
         break;
       case "speed":
         plane.speedBoost = true;
-        plane.speedBoostTimer = 5.0; // 5 seconds
+        plane.speedBoostTimer = 300;
         pushFloatingText("SPEED BOOST!", plane.x, plane.y - 30, "#ffd54f");
         break;
     }
