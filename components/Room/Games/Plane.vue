@@ -444,21 +444,6 @@ const checkOrientation = () => {
   isPortrait.value = window.innerHeight > window.innerWidth;
 };
 
-// ══════════════════════════════════════════════════════════════════════════════
-// VIRTUAL JOYSTICK — FIXED
-//
-// Key fixes vs previous version:
-//  1. Touch ID tracking: we lock to the first touch's identifier in jsStart
-//     so right-side buttons can't accidentally steal the joystick touch.
-//  2. Coordinate math uses clientX/Y only — no getBoundingClientRect offset
-//     needed for the delta calc since we store origin in client space too.
-//  3. jsBaseStyle uses client-space origin minus the zone's rect so the base
-//     renders at the correct spot even in fullscreen.
-//  4. jsActive drives visibility; the base is always in the DOM so there's
-//     no mount/unmount flash.
-//  5. jsMoving flag for the direction arc (only show when thumb is dragged).
-//  6. Released keys are cleared in jsEnd regardless of active state.
-// ══════════════════════════════════════════════════════════════════════════════
 const JOYSTICK_RADIUS = 56; // max knob travel in px
 const DEADZONE = 12; // ignore tiny movements
 
@@ -523,34 +508,35 @@ const jsMove = (e) => {
   _jsUpdate(t);
 };
 
-const jsEnd = (e) => {
-  if (!jsActive.value) return;
-
-  // Only release if our tracked touch ended
-  const released = Array.from(e.changedTouches).some(
-    (t) => t.identifier === jsTouchId.value,
-  );
-  if (!released && e.type !== "touchcancel") return;
-
+const _jsRelease = () => {
   jsActive.value = false;
   jsMoving.value = false;
   jsTouchId.value = null;
   jsDelta.value = { x: 0, y: 0 };
+  game.mobileJoystick.value = { active: false, nx: 0, ny: 0 }; // ← replaces the 4x mobileKey calls
+};
 
-  // Release all directional keys
-  mobileKey("up", false);
-  mobileKey("down", false);
-  mobileKey("left", false);
-  mobileKey("right", false);
+const jsEnd = (e) => {
+  if (!jsActive.value) return;
+
+  if (e.type === "touchcancel") {
+    _jsRelease();
+    return;
+  }
+
+  const released = Array.from(e.changedTouches).some(
+    (t) => t.identifier === jsTouchId.value,
+  );
+  if (!released) return;
+
+  _jsRelease();
 };
 
 const _jsUpdate = (touch) => {
-  // Delta is always relative to where the thumb first landed (client space)
   const rawX = touch.clientX - jsOriginClient.value.x;
   const rawY = touch.clientY - jsOriginClient.value.y;
   const dist = Math.hypot(rawX, rawY);
 
-  // Clamp knob travel to radius
   const clamp = Math.min(dist, JOYSTICK_RADIUS);
   const angle = Math.atan2(rawY, rawX);
 
@@ -563,17 +549,12 @@ const _jsUpdate = (touch) => {
   const active = dist > DEADZONE;
   jsMoving.value = active;
 
-  // Normalised direction (safe div)
+  // Normalised direction vector — sent directly to game engine
   const nx = dist > 1 ? rawX / dist : 0;
   const ny = dist > 1 ? rawY / dist : 0;
 
-  // Diagonal-aware thresholds:
-  //   Left/right rotate the plane — threshold 0.25 for responsive turning
-  //   Up = thrust forward, down = brake/reverse — threshold 0.3
-  mobileKey("left", active && nx < -0.25);
-  mobileKey("right", active && nx > 0.25);
-  mobileKey("up", active && ny < -0.3);
-  mobileKey("down", active && ny > 0.3);
+  // Feed into game engine (replaces the 4x mobileKey calls)
+  game.mobileJoystick.value = { active, nx, ny };
 };
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -1355,20 +1336,17 @@ kbd {
   position: absolute;
   left: 0;
   bottom: 0;
-  width: 50%;
+  width: 30%;
   height: 55%;
+  min-height: 200px;
   z-index: 20;
-  /* CRITICAL: touch-action none stops the browser from stealing
-     scroll/zoom gestures — required for reliable joystick on mobile */
   touch-action: none;
-  /* subtle zone tint */
+
   background: radial-gradient(
     ellipse at 30% 70%,
     #4fc3f708 0%,
     transparent 65%
   );
-  /* Needed for absolute children to position inside zone */
-  position: absolute;
 }
 
 /* Floating base — snaps to where thumb lands */
@@ -1505,8 +1483,9 @@ kbd {
   position: absolute;
   right: 0;
   bottom: 0;
-  width: 50%;
+  width: 20%;
   height: 55%;
+  min-height: 200px;
   z-index: 20;
   display: flex;
   flex-direction: column;
@@ -1515,7 +1494,6 @@ kbd {
   gap: 14px;
   padding: 18px 24px 22px;
   touch-action: none;
-  pointer-events: none;
 }
 
 /* ABILITY button */

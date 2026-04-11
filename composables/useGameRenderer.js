@@ -80,9 +80,6 @@ export function useGameRenderer(canvasRef, canvasW, canvasH) {
       if (!p.dead) _drawPlane(p);
     });
 
-    // Mini-map
-    _drawMiniMap(gs, W, H);
-
     ctx.restore();
   };
 
@@ -502,77 +499,6 @@ export function useGameRenderer(canvasRef, canvasW, canvasH) {
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
-  };
-
-  // ── Mini-map ───────────────────────────────────────────────────────────────
-  const _drawMiniMap = (gs, W, H) => {
-    const mw = 90,
-      mh = 55;
-    const mx = W - mw - 8;
-    const my = H - mh - 50;
-
-    // Background
-    ctx.save();
-    ctx.globalAlpha = 0.75;
-    ctx.fillStyle = "#04080f";
-    ctx.strokeStyle = "#1e3a5f";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.roundRect(mx, my, mw, mh, 4);
-    ctx.fill();
-    ctx.stroke();
-
-    // "RADAR" label
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = "#4fc3f760";
-    ctx.font = '7px "Courier New", monospace';
-    ctx.textAlign = "left";
-    ctx.fillText("RADAR", mx + 4, my + 9);
-
-    // Scan line animation
-    const scanAngle = (gs.frame * 0.03) % (Math.PI * 2);
-    const cx = mx + mw / 2,
-      cy = my + mh / 2;
-    ctx.fillStyle = "#4fc3f710";
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, Math.max(mw, mh), scanAngle - 0.4, scanAngle);
-    ctx.closePath();
-    ctx.fill();
-
-    // Power-up dots
-    if (gs.powerUps) {
-      gs.powerUps
-        .filter((pu) => !pu.collected)
-        .forEach((pu) => {
-          const px = mx + (pu.x / canvasW.value) * mw;
-          const py = my + (pu.y / canvasH.value) * mh;
-          ctx.fillStyle = pu.color;
-          ctx.globalAlpha = 0.8;
-          ctx.beginPath();
-          ctx.arc(px, py, 2, 0, Math.PI * 2);
-          ctx.fill();
-        });
-    }
-
-    // Plane dots
-    gs.planes
-      .filter((p) => !p.dead)
-      .forEach((p) => {
-        const px = mx + (p.x / canvasW.value) * mw;
-        const py = my + (p.y / canvasH.value) * mh;
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = p.isMe ? "#4fc3f7" : p.isAI ? "#ef5350" : "#66bb6a";
-        ctx.shadowBlur = p.isMe ? 6 : 0;
-        ctx.shadowColor = "#4fc3f7";
-        ctx.beginPath();
-        ctx.arc(px, py, p.isMe ? 3.5 : 2.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      });
-
-    ctx.globalAlpha = 1;
-    ctx.restore();
   };
 
   return { init, draw, triggerShake };

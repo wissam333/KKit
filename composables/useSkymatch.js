@@ -116,6 +116,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
   const streakVisible = ref(false);
   const floatingTexts = ref([]);
   const wave = ref(1);
+  const mobileJoystick = ref({ active: false, nx: 0, ny: 0 });
 
   let gameState = null;
   let animId = null;
@@ -582,40 +583,66 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
 
   // ── Player plane movement ───────────────────────────────────────────────────
   const updateMyPlane = (me, gs, W, H) => {
-    // Rotate
-    if (keys.left) me.angle -= 0.045;
-    if (keys.right) me.angle += 0.045;
+    const js = mobileJoystick.value;
 
-    // Thrust — always accelerate in facing direction when W/Up held
-    const effectiveAccel = me.speedBoost ? me.accel * 1.8 : me.accel;
-    const effectiveSpeed = me.speedBoost ? me.speed * 1.5 : me.speed;
+    if (js.active) {
+      // ── MOBILE: joystick drives velocity directly ──────────────────
+      // Rotate plane to face movement direction (visual only, smooth)
+      if (Math.hypot(js.nx, js.ny) > 0.1) {
+        const targetAngle = Math.atan2(js.ny, js.nx);
+        let da = targetAngle - me.angle;
+        // Normalize to [-π, π]
+        while (da > Math.PI) da -= Math.PI * 2;
+        while (da < -Math.PI) da += Math.PI * 2;
+        me.angle += da * 0.12; // smooth visual rotation
+      }
 
-    me.thrustOn = keys.up;
-    if (keys.up) {
-      me.vx += Math.cos(me.angle) * effectiveAccel;
-      me.vy += Math.sin(me.angle) * effectiveAccel;
+      const effectiveSpeed = me.speedBoost ? me.speed * 1.5 : me.speed;
+      const effectiveAccel = me.speedBoost ? me.accel * 1.8 : me.accel;
+
+      me.vx += js.nx * effectiveAccel * 1.4;
+      me.vy += js.ny * effectiveAccel * 1.4;
+      me.thrustOn = Math.hypot(js.nx, js.ny) > 0.1;
+
+      // Speed cap
+      const spd = Math.hypot(me.vx, me.vy);
+      if (spd > effectiveSpeed) {
+        me.vx = (me.vx / spd) * effectiveSpeed;
+        me.vy = (me.vy / spd) * effectiveSpeed;
+      }
+    } else {
+      // ── DESKTOP: original keyboard rotation + thrust ───────────────
+      if (keys.left) me.angle -= 0.045;
+      if (keys.right) me.angle += 0.045;
+
+      const effectiveAccel = me.speedBoost ? me.accel * 1.8 : me.accel;
+      const effectiveSpeed = me.speedBoost ? me.speed * 1.5 : me.speed;
+
+      me.thrustOn = keys.up;
+      if (keys.up) {
+        me.vx += Math.cos(me.angle) * effectiveAccel;
+        me.vy += Math.sin(me.angle) * effectiveAccel;
+      }
+      if (keys.down) {
+        me.vx -= Math.cos(me.angle) * effectiveAccel * 0.5;
+        me.vy -= Math.sin(me.angle) * effectiveAccel * 0.5;
+      }
+
+      // Speed cap
+      const spd = Math.hypot(me.vx, me.vy);
+      if (spd > effectiveSpeed) {
+        me.vx = (me.vx / spd) * effectiveSpeed;
+        me.vy = (me.vy / spd) * effectiveSpeed;
+      }
     }
-    if (keys.down) {
-      me.vx -= Math.cos(me.angle) * effectiveAccel * 0.5;
-      me.vy -= Math.sin(me.angle) * effectiveAccel * 0.5;
-    }
 
-    // Drag
+    // ── Shared: drag, move, wall bounce ──────────────────────────────
     me.vx *= me.drag;
     me.vy *= me.drag;
 
-    // Speed cap
-    const spd = Math.hypot(me.vx, me.vy);
-    if (spd > effectiveSpeed) {
-      me.vx = (me.vx / spd) * effectiveSpeed;
-      me.vy = (me.vy / spd) * effectiveSpeed;
-    }
-
-    // Move
     me.x += me.vx;
     me.y += me.vy;
 
-    // Wall bounce
     if (me.x < 22) {
       me.x = 22;
       me.vx = Math.abs(me.vx) * 0.5;
@@ -1244,7 +1271,9 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
 
   // ── Resize ───────────────────────────────────────────────────────────────────
   const resize = () => {
-    isMobile.value = window.innerWidth < 640;
+    isMobile.value =
+      window.innerWidth < 1024 &&
+      ("ontouchstart" in window || navigator.maxTouchPoints > 0);
     if (!wrapperRef.value) return;
     const rect = wrapperRef.value.getBoundingClientRect();
     if (rect.width === 0) return;
@@ -1344,5 +1373,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     unmount,
     resize,
     planeTypes,
+    mobileJoystick,
   };
 }
