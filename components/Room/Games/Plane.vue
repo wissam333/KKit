@@ -220,7 +220,7 @@
           left: ft.x + 'px',
           top: ft.y + 'px',
           color: ft.color,
-          opacity: ft.life / 80,
+          opacity: Math.min(1, ft.life / 1.33),
         }"
       >
         {{ ft.text }}

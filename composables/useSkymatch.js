@@ -1,19 +1,23 @@
 // composables/useSkymatch.js
-// Core game engine — fixed: planes now fly correctly
 
 import { ref, computed, nextTick, watch } from "vue";
 import { useGameSounds } from "./useGameSounds";
 import { useGameRenderer } from "./useGameRenderer";
 
+// ── All times are in SECONDS (dt-based, framerate independent) ──────────────
 const BULLET_SPEED = 9;
-const BULLET_LIFE = 62;
-const RELOAD_FRAMES = 12;
+const BULLET_LIFE = 62; // 62 frames ≈ 1.03s at dt~1.0
+const RELOAD_TIME = 12; //  12 frames ≈ 0.2s at dt~1.0
 const MAX_AMMO = 30;
-const AMMO_REGEN = 180;
+const AMMO_REGEN = 180; // 3 seconds per ammo point
 const AI_COUNT = 3;
 const CANVAS_BASE_W = 900;
 const CANVAS_BASE_H = 550;
-const POWERUP_SPAWN_INTERVAL = 480;
+const POWERUP_SPAWN_INTERVAL = 8; // 8 seconds between spawns
+
+const TARGET_FPS = 60;
+const TARGET_FRAME_MS = 1000 / TARGET_FPS;
+let lastTimestamp = 0;
 
 const POWERUP_TYPES = [
   {
@@ -53,7 +57,7 @@ export const planeTypes = [
     accel: 0.18,
     drag: 0.97,
     ability: "roll",
-    abilityCd: 240,
+    abilityCd: 4.0,
   },
   {
     id: "sopwith",
@@ -65,7 +69,7 @@ export const planeTypes = [
     accel: 0.2,
     drag: 0.96,
     ability: "burst",
-    abilityCd: 200,
+    abilityCd: 3.33,
   },
   {
     id: "spad",
@@ -77,7 +81,7 @@ export const planeTypes = [
     accel: 0.22,
     drag: 0.95,
     ability: "boost",
-    abilityCd: 180,
+    abilityCd: 3.0,
   },
   {
     id: "albatros",
@@ -89,7 +93,7 @@ export const planeTypes = [
     accel: 0.16,
     drag: 0.975,
     ability: "repair",
-    abilityCd: 280,
+    abilityCd: 4.67,
   },
 ];
 
@@ -115,6 +119,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
   const streakText = ref("");
   const streakVisible = ref(false);
   const floatingTexts = ref([]);
+  let _floatingTextsRaw = [];
   const wave = ref(1);
   const mobileJoystick = ref({ active: false, nx: 0, ny: 0 });
 
@@ -122,6 +127,16 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
   let animId = null;
   let unsubscribe = null;
   let lobbyPingInterval = null;
+
+  // ── Host detection — defined ONCE at composable level, not inside update() ──
+  // The peer whose ID sorts first alphabetically is the host.
+  const amHost = computed(() => {
+    const allIds = [
+      room.myPeerId.value,
+      ...lobbyPlayers.value.map((p) => p.peerId),
+    ];
+    return allIds.sort()[0] === room.myPeerId.value;
+  });
 
   // ── Input ───────────────────────────────────────────────────────────────────
   const keys = {
@@ -214,7 +229,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     myKills.value = 0;
     myAmmo.value = MAX_AMMO;
     wave.value = 1;
-
     const isSolo = solo || lobbyPlayers.value.length === 0;
     buildGameState(isSolo);
     room.broadcast({ type: "game-lobby", subtype: "start" });
@@ -230,20 +244,19 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     resize();
     renderer.init();
     cancelAnimationFrame(animId);
+    lastTimestamp = 0;
     animId = requestAnimationFrame(gameLoop);
   };
 
-  // ── _makePlane: ALL fields explicitly defaulted so nothing is ever undefined ─
+  // ── _makePlane ──────────────────────────────────────────────────────────────
   const _makePlane = (opts) => {
     const plane = {
-      // identity
       id: "",
       isMe: false,
       isAI: false,
       name: "",
       planeId: "sopwith",
       icon: "✈",
-      // position & physics — MUST be numbers
       x: 0,
       y: 0,
       vx: 0,
@@ -253,27 +266,21 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       accel: 0.18,
       drag: 0.97,
       color: "#ffffff",
-      // health
       hp: 100,
       maxHp: 100,
-      // scoring
       kills: 0,
       assists: 0,
       damageDealt: 0,
-      // weapons
       ammo: MAX_AMMO,
       reloadTimer: 0,
       ammoTimer: 0,
-      // ability
       ability: "roll",
       abilityCd: 0,
-      abilityMaxCd: 240,
-      // state flags
+      abilityMaxCd: 4.0,
       dead: false,
       respawnTimer: 0,
       thrustOn: false,
       trail: [],
-      // ability animations
       invincible: false,
       invincibleTimer: 0,
       rolling: false,
@@ -285,28 +292,24 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       burstTimer: 0,
       repairing: false,
       repairTimer: 0,
-      // networking
+      repairTickTimer: 0,
       targetX: null,
       targetY: null,
       lastSeen: 0,
     };
-    // Override with caller's options
     Object.assign(plane, opts);
     return plane;
   };
 
   // ── Build game state ────────────────────────────────────────────────────────
   const buildGameState = (withAI) => {
-    // Ensure canvas is sized BEFORE reading W/H
     resize();
     const W = canvasW.value > 0 ? canvasW.value : CANVAS_BASE_W;
     const H = canvasH.value > 0 ? canvasH.value : CANVAS_BASE_H;
-
     const pd = myPlaneData.value;
     const myId = room.myPeerId.value;
     const planes = [];
 
-    // ── My plane ──
     planes.push(
       _makePlane({
         id: myId,
@@ -332,7 +335,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       }),
     );
 
-    // ── Remote human planes ──
     const allColors = [
       "#e05a00",
       "#1976d2",
@@ -375,7 +377,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       );
     });
 
-    // ── AI planes ──
     if (withAI || planes.length < 2) {
       const aiNames = [
         "Baron Von Richthofen",
@@ -408,7 +409,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
             color: aiColors[i % aiColors.length],
             ability: "burst",
             abilityCd: 0,
-            abilityMaxCd: 200,
+            abilityMaxCd: 3.33,
             aiState: {
               targetId: null,
               fireTimer: 0,
@@ -422,7 +423,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       }
     }
 
-    // Clouds
     const clouds = [
       ...Array.from({ length: 5 }, () => ({
         x: Math.random() * W,
@@ -441,7 +441,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
         layer: 2,
       })),
     ];
-
     const trees = Array.from({ length: 22 }, () => ({
       x: Math.random() * W,
       h: 18 + Math.random() * 14,
@@ -455,89 +454,103 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       trees,
       powerUps: [],
       frame: 0,
-      powerUpTimer: 120,
+      powerUpTimer: 2 * 60,
       teamTarget: null,
     };
   };
 
   // ── Game loop ───────────────────────────────────────────────────────────────
-  const gameLoop = () => {
+  const gameLoop = (timestamp) => {
     if (phase.value !== "playing" && phase.value !== "ending") return;
-    update();
+    const raw = lastTimestamp ? timestamp - lastTimestamp : TARGET_FRAME_MS;
+    const dt = Math.min(raw / TARGET_FRAME_MS, 1.5);
+    lastTimestamp = timestamp;
+    update(dt);
     renderer.draw(gameState);
     animId = requestAnimationFrame(gameLoop);
   };
 
   // ── Update ──────────────────────────────────────────────────────────────────
-  const update = () => {
+  const update = (dt) => {
     const gs = gameState;
     gs.frame++;
     const W = canvasW.value;
     const H = canvasH.value;
 
-    // Scroll clouds
+    // Clouds
     gs.clouds.forEach((c) => {
-      c.x -= c.spd;
+      c.x -= c.spd * dt;
       if (c.x < -120) c.x = W + 80;
     });
 
-    // Power-up spawning
-    gs.powerUpTimer--;
-    if (gs.powerUpTimer <= 0) {
-      spawnPowerUp(gs);
-      gs.powerUpTimer =
-        POWERUP_SPAWN_INTERVAL + Math.floor(Math.random() * 120);
+    // Power-up spawning — host only
+    if (amHost.value) {
+      gs.powerUpTimer -= dt;
+      if (gs.powerUpTimer <= 0) {
+        if (gs.powerUps.length < 3) spawnPowerUp(gs); // ← max 3 at once
+        gs.powerUpTimer = POWERUP_SPAWN_INTERVAL + Math.random() * 2;
+      }
     }
 
-    // Power-up lifecycle
+    // Power-up lifecycle — host broadcasts expiry
+
+    const safeDt = Math.min(dt, 1.0); // never drain more than 1s per frame
+
     gs.powerUps = gs.powerUps.filter((pu) => {
       if (pu.collected) return false;
-      pu.life--;
-      return pu.life > 0;
+      pu.life -= dt;
+      if (pu.life <= 0) {
+        if (amHost.value) {
+          room.broadcast({
+            type: "game-powerup",
+            subtype: "expire",
+            puId: pu.id,
+          });
+        }
+        return false;
+      }
+      return true;
     });
 
     // My plane
     const me = gs.planes.find((p) => p.isMe);
     if (me && !me.dead) {
-      updateMyPlane(me, gs, W, H);
+      updateMyPlane(me, gs, W, H, dt);
       broadcastMyState(me);
     }
 
-    // Remote humans — smooth lerp toward broadcast position
+    // Remote humans — lerp
     gs.planes
       .filter((p) => !p.isMe && !p.isAI && !p.dead)
       .forEach((p) => {
         if (p.targetX !== null) {
-          p.x += (p.targetX - p.x) * 0.25;
-          p.y += (p.targetY - p.y) * 0.25;
+          p.x += (p.targetX - p.x) * 0.25 * dt;
+          p.y += (p.targetY - p.y) * 0.25 * dt;
         }
         if (p.lastSeen > 0 && gs.frame - p.lastSeen > 180) p.dead = true;
       });
 
-    // AI
+    // AI — dt is now correctly passed
     gs.planes
       .filter((p) => p.isAI && !p.dead)
-      .forEach((p) => updateAI(p, gs, W, H));
+      .forEach((p) => updateAI(p, gs, W, H, dt));
 
-    // Respawn AI only
+    // AI respawn
     gs.planes
       .filter((p) => p.dead && p.isAI)
       .forEach((p) => {
-        p.respawnTimer--;
+        p.respawnTimer -= dt;
         if (p.respawnTimer <= 0) respawnPlane(p, W, H);
       });
 
     // Bullets
     gs.bullets = gs.bullets.filter((b) => {
-      b.x += Math.cos(b.angle) * BULLET_SPEED;
-      b.y += Math.sin(b.angle) * BULLET_SPEED;
-      b.life--;
+      b.x += Math.cos(b.angle) * BULLET_SPEED * dt;
+      b.y += Math.sin(b.angle) * BULLET_SPEED * dt;
+      b.life -= dt;
       if (b.life <= 0 || b.x < 0 || b.x > W || b.y < 0 || b.y > H) return false;
-
-      // Only process damage for bullets owned by me or AI
       const myId = room.myPeerId.value;
       if (b.ownerId !== myId && !b.ownerId.startsWith("ai_")) return true;
-
       for (const plane of gs.planes) {
         if (plane.id === b.ownerId || plane.dead || plane.invincible) continue;
         if (Math.hypot(plane.x - b.x, plane.y - b.y) < 19) {
@@ -565,70 +578,64 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
 
     // Explosions
     gs.explosions = gs.explosions.filter((e) => {
-      e.life--;
-      e.r += e.big ? 2.2 : 1.5;
+      e.life -= dt;
+      e.r += (e.big ? 2.2 : 1.5) * dt;
       return e.life > 0;
     });
 
-    // Floating text decay
-    floatingTexts.value = floatingTexts.value.filter((t) => {
-      t.life--;
-      t.y -= 0.7;
+    // Floating texts
+    const prevLen = _floatingTextsRaw.length;
+    _floatingTextsRaw = _floatingTextsRaw.filter((t) => {
+      t.life -= dt;
+      t.y -= 0.7 * dt;
       return t.life > 0;
     });
+    // Only trigger Vue update when items are added or removed
+    if (_floatingTextsRaw.length !== prevLen) {
+      floatingTexts.value = [..._floatingTextsRaw];
+    }
 
-    // End condition
     if (phase.value === "playing") checkEndCondition(gs);
   };
 
   // ── Player plane movement ───────────────────────────────────────────────────
-  const updateMyPlane = (me, gs, W, H) => {
+  const updateMyPlane = (me, gs, W, H, dt) => {
     const js = mobileJoystick.value;
 
     if (js.active) {
-      // ── MOBILE: joystick drives velocity directly ──────────────────
-      // Rotate plane to face movement direction (visual only, smooth)
+      // Mobile: joystick drives velocity directly
       if (Math.hypot(js.nx, js.ny) > 0.1) {
         const targetAngle = Math.atan2(js.ny, js.nx);
         let da = targetAngle - me.angle;
-        // Normalize to [-π, π]
         while (da > Math.PI) da -= Math.PI * 2;
         while (da < -Math.PI) da += Math.PI * 2;
-        me.angle += da * 0.12; // smooth visual rotation
+        me.angle += da * 0.12 * dt;
       }
-
       const effectiveSpeed = me.speedBoost ? me.speed * 1.5 : me.speed;
       const effectiveAccel = me.speedBoost ? me.accel * 1.8 : me.accel;
-
-      me.vx += js.nx * effectiveAccel * 1.4;
-      me.vy += js.ny * effectiveAccel * 1.4;
+      me.vx += js.nx * effectiveAccel * 1.4 * dt;
+      me.vy += js.ny * effectiveAccel * 1.4 * dt;
       me.thrustOn = Math.hypot(js.nx, js.ny) > 0.1;
-
-      // Speed cap
       const spd = Math.hypot(me.vx, me.vy);
       if (spd > effectiveSpeed) {
         me.vx = (me.vx / spd) * effectiveSpeed;
         me.vy = (me.vy / spd) * effectiveSpeed;
       }
     } else {
-      // ── DESKTOP: original keyboard rotation + thrust ───────────────
-      if (keys.left) me.angle -= 0.045;
-      if (keys.right) me.angle += 0.045;
-
+      // Desktop: keyboard rotation + thrust
+      if (keys.left) me.angle -= 0.045 * dt;
+      if (keys.right) me.angle += 0.045 * dt;
       const effectiveAccel = me.speedBoost ? me.accel * 1.8 : me.accel;
       const effectiveSpeed = me.speedBoost ? me.speed * 1.5 : me.speed;
-
       me.thrustOn = keys.up;
       if (keys.up) {
-        me.vx += Math.cos(me.angle) * effectiveAccel;
-        me.vy += Math.sin(me.angle) * effectiveAccel;
+        me.vx += Math.cos(me.angle) * effectiveAccel * dt;
+        me.vy += Math.sin(me.angle) * effectiveAccel * dt;
       }
       if (keys.down) {
-        me.vx -= Math.cos(me.angle) * effectiveAccel * 0.5;
-        me.vy -= Math.sin(me.angle) * effectiveAccel * 0.5;
+        me.vx -= Math.cos(me.angle) * effectiveAccel * 0.5 * dt;
+        me.vy -= Math.sin(me.angle) * effectiveAccel * 0.5 * dt;
       }
-
-      // Speed cap
       const spd = Math.hypot(me.vx, me.vy);
       if (spd > effectiveSpeed) {
         me.vx = (me.vx / spd) * effectiveSpeed;
@@ -636,13 +643,15 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       }
     }
 
-    // ── Shared: drag, move, wall bounce ──────────────────────────────
-    me.vx *= me.drag;
-    me.vy *= me.drag;
+    // Framerate-independent drag
+    const dragFactor = Math.pow(me.drag, dt);
+    me.vx *= dragFactor;
+    me.vy *= dragFactor;
 
-    me.x += me.vx;
-    me.y += me.vy;
+    me.x += me.vx * dt;
+    me.y += me.vy * dt;
 
+    // Wall bounce
     if (me.x < 22) {
       me.x = 22;
       me.vx = Math.abs(me.vx) * 0.5;
@@ -660,47 +669,44 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       me.vy = -Math.abs(me.vy) * 0.5;
     }
 
-    // Trail
     me.trail.push({ x: me.x, y: me.y });
     if (me.trail.length > 16) me.trail.shift();
 
-    // Ammo regen
-    me.reloadTimer = Math.max(0, me.reloadTimer - 1);
-    me.ammoTimer++;
+    // Weapons
+    me.reloadTimer = Math.max(0, me.reloadTimer - dt);
+    me.ammoTimer += dt;
     if (me.ammoTimer >= AMMO_REGEN && me.ammo < MAX_AMMO) {
       me.ammo++;
       me.ammoTimer = 0;
     }
 
-    // Burst fire
     if (me.burstActive) {
-      me.burstTimer--;
+      me.burstTimer -= dt;
       if (me.burstTimer <= 0 && me.burstCount > 0) {
         fireBullet(me, gs);
         me.burstCount--;
-        me.burstTimer = 5;
+        me.burstTimer = 3 / 60; // 3 frames between burst shots
         if (me.burstCount <= 0) me.burstActive = false;
       }
     }
 
-    // Normal fire
     if (keys.fire && me.reloadTimer === 0 && me.ammo > 0 && !me.burstActive) {
       fireBullet(me, gs);
       sounds.gunshot();
     }
 
-    // Ability (E)
-    me.abilityCd = Math.max(0, me.abilityCd - 1);
+    // Ability cooldown
+    me.abilityCd = Math.max(0, me.abilityCd - dt);
     if (keys.ability && me.abilityCd === 0) {
       activateAbility(me, gs);
       keys.ability = false;
     }
 
-    // Ability timers
+    // Ability timers (all in seconds)
     if (me.invincibleTimer > 0) {
-      me.invincibleTimer--;
+      me.invincibleTimer -= dt;
       me.rolling = true;
-      me.rollAngle = (me.rollAngle || 0) + 0.35;
+      me.rollAngle = (me.rollAngle || 0) + 0.35 * dt;
       if (me.invincibleTimer <= 0) {
         me.invincible = false;
         me.rolling = false;
@@ -708,16 +714,21 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       }
     }
     if (me.speedBoostTimer > 0) {
-      me.speedBoostTimer--;
+      me.speedBoostTimer -= dt;
       if (me.speedBoostTimer <= 0) me.speedBoost = false;
     }
     if (me.repairTimer > 0) {
-      me.repairTimer--;
-      if (me.repairTimer % 8 === 0 && me.hp < me.maxHp) {
+      me.repairTimer -= dt;
+      me.repairTickTimer += dt;
+      // Tick every ~0.133s (8 frames at 60fps)
+      if (me.repairTickTimer >= 8 / 60 && me.hp < me.maxHp) {
+        me.repairTickTimer = 0;
         me.hp = Math.min(me.maxHp, me.hp + 3);
-        pushFloatingText("+3 HP", me.x, me.y - 20, "#66bb6a");
       }
-      if (me.repairTimer <= 0) me.repairing = false;
+      if (me.repairTimer <= 0) {
+        me.repairing = false;
+        me.repairTickTimer = 0;
+      }
     }
 
     // Power-up collection
@@ -728,7 +739,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
           collectPowerUp(me, pu, gs);
       });
 
-    // Sync HUD refs
+    // Sync HUD
     myHp.value = me.hp;
     myAmmo.value = me.ammo;
     myAbilityCd.value = me.abilityCd;
@@ -736,30 +747,31 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     myAbilityName.value = me.ability;
   };
 
-  // ── Ability activation ──────────────────────────────────────────────────────
+  // ── Ability activation (all timers in seconds) ──────────────────────────────
   const activateAbility = (plane, gs) => {
     plane.abilityCd = plane.abilityMaxCd;
     sounds.abilityUse();
     switch (plane.ability) {
       case "roll":
         plane.invincible = true;
-        plane.invincibleTimer = 45;
+        plane.invincibleTimer = 45; // was 0.75s, now 45 frames
         pushFloatingText("BARREL ROLL!", plane.x, plane.y - 25, "#ffd54f");
         break;
       case "burst":
         plane.burstActive = true;
         plane.burstCount = 5;
-        plane.burstTimer = 3;
+        plane.burstTimer = 3; // was 3/60, now 3 frames
         pushFloatingText("BURST FIRE!", plane.x, plane.y - 25, "#ef5350");
         break;
       case "boost":
         plane.speedBoost = true;
-        plane.speedBoostTimer = 180;
+        plane.speedBoostTimer = 180; // was 3.0s, now 180 frames
         pushFloatingText("SPEED BOOST!", plane.x, plane.y - 25, "#ffd54f");
         break;
       case "repair":
         plane.repairing = true;
-        plane.repairTimer = 120;
+        plane.repairTimer = 120; // was 2.0s, now 120 frames
+        plane.repairTickTimer = 0;
         pushFloatingText("REPAIRING...", plane.x, plane.y - 25, "#66bb6a");
         break;
     }
@@ -767,25 +779,44 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
 
   // ── Power-ups ───────────────────────────────────────────────────────────────
   const spawnPowerUp = (gs) => {
-    const W = canvasW.value,
-      H = canvasH.value;
+    const W = canvasW.value;
+    const H = canvasH.value;
     const type =
       POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
-    gs.powerUps.push({
+    const pu = {
       ...type,
+      id: `pu_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       x: 80 + Math.random() * (W - 160),
       y: 60 + Math.random() * (H - 140),
-      life: 600,
-      maxLife: 600,
+      life: 10 * 60, // ← was 10, now 600 "frames" so dt~1.0 drains it over 10 seconds
+      maxLife: 10 * 60, // ← same
       phase: Math.random() * Math.PI * 2,
       collected: false,
+    };
+    gs.powerUps.push(pu);
+
+    // Broadcast so all devices show the same power-up
+    room.broadcast({
+      type: "game-powerup",
+      subtype: "spawn",
+      pu: {
+        id: pu.id,
+        effect: pu.effect,
+        icon: pu.icon,
+        label: pu.label,
+        color: pu.color,
+        glowColor: pu.glowColor,
+        x: pu.x,
+        y: pu.y,
+        life: pu.life, // now 600
+        maxLife: pu.maxLife, // now 600
+        phase: pu.phase,
+      },
     });
   };
 
-  const collectPowerUp = (plane, pu, gs) => {
-    pu.collected = true;
-    sounds.powerUp();
-    switch (pu.effect) {
+  const _applyPowerUpEffect = (plane, effect) => {
+    switch (effect) {
       case "ammo":
         plane.ammo = MAX_AMMO;
         if (plane.isMe) myAmmo.value = MAX_AMMO;
@@ -798,17 +829,43 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
         break;
       case "speed":
         plane.speedBoost = true;
-        plane.speedBoostTimer = 300;
+        plane.speedBoostTimer = 5.0; // 5 seconds
         pushFloatingText("SPEED BOOST!", plane.x, plane.y - 30, "#ffd54f");
         break;
     }
   };
 
-  // ── AI update ───────────────────────────────────────────────────────────────
-  const updateAI = (ai, gs, W, H) => {
+  // Replace collectPowerUp:
+  const collectPowerUp = (plane, pu, gs) => {
+    if (pu.collected) return;
+    pu.collected = true;
+    sounds.powerUp();
+    _applyPowerUpEffect(plane, pu.effect);
+
+    // Only broadcast if a human player collected it
+    if (!plane.isAI) {
+      room.broadcast({
+        type: "game-powerup",
+        subtype: "collect",
+        puId: pu.id,
+        planeId: plane.id,
+        effect: pu.effect,
+      });
+    } else if (amHost.value) {
+      // Host still needs to tell others to remove the power-up visually
+      room.broadcast({
+        type: "game-powerup",
+        subtype: "expire", // just remove it, no effect
+        puId: pu.id,
+      });
+    }
+  };
+
+  // ── AI update — dt is now correctly received as 5th param ──────────────────
+  const updateAI = (ai, gs, W, H, dt) => {
     const st = ai.aiState;
-    st.fireTimer = Math.max(0, st.fireTimer - 1);
-    ai.abilityCd = Math.max(0, ai.abilityCd - 1);
+    st.fireTimer = Math.max(0, st.fireTimer - dt);
+    ai.abilityCd = Math.max(0, ai.abilityCd - dt);
 
     const MARGIN = 90;
     let wallRepulse = 0,
@@ -830,7 +887,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       nearWall = true;
     }
 
-    // Team target coordination
     if (!gs.teamTarget || gs.planes.find((p) => p.id === gs.teamTarget)?.dead) {
       const ht = gs.planes.filter((p) => !p.isAI && !p.dead);
       gs.teamTarget = ht.length > 0 ? ht[0].id : null;
@@ -853,7 +909,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     });
     if (!best) return;
 
-    // State machine
     const hpFrac = ai.hp / ai.maxHp;
     if (hpFrac < 0.2 && bestDist < 350 && st.style !== "aggressive")
       st.state = "retreat";
@@ -862,7 +917,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     else if (bestDist < 300 || st.style === "aggressive") st.state = "attack";
     else st.state = "chase";
 
-    // Lead-aim
     const travelTime = bestDist / BULLET_SPEED;
     const waveAcc = Math.min(1.4, 1 + (wave.value - 1) * 0.15);
     const aimX = best.x + best.vx * travelTime * waveAcc;
@@ -887,35 +941,37 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     const baseTurnRate = nearWall ? 0.13 : st.turnSpd;
     const waveTurn = baseTurnRate * Math.min(1.5, 1 + (wave.value - 1) * 0.08);
     const da = _normalizeAngle(desiredAngle - ai.angle);
-    ai.angle += Math.sign(da) * Math.min(Math.abs(da), waveTurn);
+    ai.angle += Math.sign(da) * Math.min(Math.abs(da), waveTurn * dt);
     ai.angle = _normalizeAngle(ai.angle);
 
-    // Thrust & velocity
-    ai.thrustOn = !(st.state === "circle" && bestDist < 100);
     const effSpd = ai.speedBoost ? ai.speed * 1.4 : ai.speed;
+    ai.thrustOn = !(st.state === "circle" && bestDist < 100);
+
     if (ai.thrustOn) {
-      ai.vx += Math.cos(ai.angle) * ai.accel;
-      ai.vy += Math.sin(ai.angle) * ai.accel;
+      ai.vx += Math.cos(ai.angle) * ai.accel * dt;
+      ai.vy += Math.sin(ai.angle) * ai.accel * dt;
     } else {
-      ai.vx *= 0.93;
-      ai.vy *= 0.93;
+      ai.vx *= Math.pow(0.93, dt);
+      ai.vy *= Math.pow(0.93, dt);
     }
-    ai.vx *= ai.drag;
-    ai.vy *= ai.drag;
+
+    const dragFactor = Math.pow(ai.drag, dt);
+    ai.vx *= dragFactor;
+    ai.vy *= dragFactor;
+
     const spd = Math.hypot(ai.vx, ai.vy);
     if (spd > effSpd) {
       ai.vx = (ai.vx / spd) * effSpd;
       ai.vy = (ai.vy / spd) * effSpd;
     }
     if (spd < 0.5 && ai.thrustOn) {
-      ai.vx += Math.cos(ai.angle) * 0.5;
-      ai.vy += Math.sin(ai.angle) * 0.5;
+      ai.vx += Math.cos(ai.angle) * 0.5 * dt;
+      ai.vy += Math.sin(ai.angle) * 0.5 * dt;
     }
 
-    ai.x += ai.vx;
-    ai.y += ai.vy;
+    ai.x += ai.vx * dt;
+    ai.y += ai.vy * dt;
 
-    // Hard wall clamp
     const PAD = 25;
     if (ai.x < PAD) {
       ai.x = PAD;
@@ -937,7 +993,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     ai.trail.push({ x: ai.x, y: ai.y });
     if (ai.trail.length > 16) ai.trail.shift();
 
-    // Power-up pickup
+    // AI power-up pickup
     gs.powerUps
       .filter((pu) => !pu.collected)
       .forEach((pu) => {
@@ -958,20 +1014,21 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       st.state !== "retreat"
     ) {
       fireBullet(ai, gs);
-      st.fireTimer = (st.style === "aggressive" ? 14 : 20) + Math.random() * 16;
+      st.fireTimer =
+        ((st.style === "aggressive" ? 14 : 20) + Math.random() * 16) / 60; // convert to seconds
     }
 
-    // AI ability
-    if (ai.abilityCd === 0 && Math.random() < 0.008) activateAbility(ai, gs);
+    if (ai.abilityCd === 0 && Math.random() < 0.008 * dt)
+      activateAbility(ai, gs);
 
-    ai.reloadTimer = Math.max(0, ai.reloadTimer - 1);
-    ai.ammoTimer++;
+    ai.reloadTimer = Math.max(0, ai.reloadTimer - dt);
+    ai.ammoTimer += dt;
     if (ai.ammoTimer >= AMMO_REGEN && ai.ammo < MAX_AMMO) {
       ai.ammo++;
       ai.ammoTimer = 0;
     }
     if (ai.speedBoostTimer > 0) {
-      ai.speedBoostTimer--;
+      ai.speedBoostTimer -= dt;
       if (ai.speedBoostTimer <= 0) ai.speedBoost = false;
     }
   };
@@ -980,9 +1037,9 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
   const fireBullet = (plane, gs) => {
     if (plane.reloadTimer > 0 || plane.ammo <= 0) return;
     plane.ammo--;
-    plane.reloadTimer = RELOAD_FRAMES;
+    plane.reloadTimer = RELOAD_TIME;
     const spread = plane.burstActive ? (Math.random() - 0.5) * 0.08 : 0;
-    gs.bullets.push({
+    const bullet = {
       x: plane.x + Math.cos(plane.angle) * 24,
       y: plane.y + Math.sin(plane.angle) * 24,
       angle: plane.angle + spread,
@@ -990,7 +1047,18 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       dmg: 12 + Math.random() * 6,
       life: BULLET_LIFE,
       color: plane.color,
-    });
+    };
+    gs.bullets.push(bullet);
+    if (plane.isMe) {
+      room.broadcast({
+        type: "game-bullet",
+        x: bullet.x,
+        y: bullet.y,
+        angle: bullet.angle,
+        ownerId: bullet.ownerId,
+        color: bullet.color,
+      });
+    }
   };
 
   // ── Kill / respawn ──────────────────────────────────────────────────────────
@@ -1000,7 +1068,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     plane.dead = true;
     plane.hp = 0;
     plane.respawnTimer = plane.isAI
-      ? Math.max(120, 180 - wave.value * 10)
+      ? Math.max(2, 3 - wave.value * 0.167)
       : Infinity;
 
     const killer = gs.planes.find((p) => p.id === killerId);
@@ -1024,7 +1092,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       sounds.explosion(true);
       pushKillFeed("✈ You were shot down!");
     } else sounds.explosion(true);
-
     pushKillFeed(`${killName} ↯ ${plane.name}`);
   };
 
@@ -1045,7 +1112,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       x,
       y,
       r: big ? 10 : 5,
-      life: big ? 45 : 22,
+      life: big ? 45 : 22, // was 45/60 and 22/60, now in frame units
       big,
       sparks: big
         ? Array.from({ length: 8 }, () => ({
@@ -1061,7 +1128,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     const humanPlanes = gs.planes.filter((p) => !p.isAI);
     const aliveHumans = humanPlanes.filter((p) => !p.dead);
     const isMulti = humanPlanes.length > 1;
-
     if (isMulti) {
       if (aliveHumans.length <= 1) endGame(gs);
     } else {
@@ -1081,7 +1147,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       .filter((p) => !p.isAI)
       .map((p) => ({ name: p.name, kills: p.kills, assists: p.assists || 0 }))
       .sort((a, b) => b.kills - a.kills);
-
     sortedFinalScores.value = scores;
 
     if (forcedWinner) {
@@ -1123,6 +1188,7 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
   };
 
   const handleNetworkMessage = (data) => {
+    // ── Lobby messages (no gameState needed) ───────────────────────────────
     if (data.type === "game-lobby") {
       if (data.subtype === "ping") {
         if (!room.myPeerId.value) return;
@@ -1182,7 +1248,69 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
       return;
     }
 
+    // ── All game messages need gameState ───────────────────────────────────
     if (!gameState) return;
+
+    if (data.type === "game-powerup") {
+      if (data.subtype === "spawn") {
+        if (!amHost.value) {
+          gameState.powerUps.push({
+            ...data.pu,
+            collected: false,
+            life: data.pu.life + 0.5, // ← 0.5s grace to account for network delay
+          });
+        }
+        return;
+      }
+      if (data.subtype === "collect") {
+        const pu = gameState.powerUps.find((p) => p.id === data.puId);
+        if (pu && !pu.collected) {
+          pu.collected = true;
+          if (data.planeId && data.effect) {
+            const plane = gameState.planes.find((p) => p.id === data.planeId);
+            if (plane && !plane.isMe) {
+              sounds.powerUp();
+              _applyPowerUpEffect(plane, data.effect);
+            }
+          }
+        } else if (!pu) {
+          // Spawn message hasn't arrived yet — buffer and retry once
+          setTimeout(() => {
+            const delayed = gameState?.powerUps.find((p) => p.id === data.puId);
+            if (delayed && !delayed.collected) {
+              delayed.collected = true;
+              if (data.planeId && data.effect) {
+                const plane = gameState?.planes.find(
+                  (p) => p.id === data.planeId,
+                );
+                if (plane && !plane.isMe)
+                  _applyPowerUpEffect(plane, data.effect);
+              }
+            }
+          }, 200);
+        }
+        return;
+      }
+      if (data.subtype === "expire") {
+        // Non-host removes expired power-up
+        const pu = gameState.powerUps.find((p) => p.id === data.puId);
+        if (pu) pu.collected = true; // mark collected so filter removes it
+        return;
+      }
+    }
+
+    if (data.type === "game-bullet") {
+      gameState.bullets.push({
+        x: data.x,
+        y: data.y,
+        angle: data.angle,
+        ownerId: data.ownerId,
+        dmg: 0,
+        life: BULLET_LIFE,
+        color: data.color,
+      });
+      return;
+    }
 
     if (data.type === "game-state") {
       const p = gameState.planes.find((pl) => pl.id === data.id);
@@ -1232,14 +1360,16 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
   };
 
   const pushFloatingText = (text, x, y, color = "#fff") => {
-    floatingTexts.value.push({
+    const item = {
       id: Date.now() + Math.random(),
       text,
       x,
       y,
       color,
-      life: 80,
-    });
+      life: 1.33, // 1.33 seconds
+    };
+    _floatingTextsRaw.push(item);
+    floatingTexts.value = [..._floatingTextsRaw]; // sync immediately when adding
   };
 
   const showStreak = (text) => {
@@ -1289,7 +1419,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     window.addEventListener("resize", resize);
     window.addEventListener("keydown", (e) => onKey(e, true));
     window.addEventListener("keyup", (e) => onKey(e, false));
-
     unsubscribe = room.onMessage((data) => handleNetworkMessage(data));
 
     watch(
@@ -1317,7 +1446,6 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
         broadcastLobby();
       }
     }, 1200);
-
     lobbyPingInterval = setInterval(() => {
       if (phase.value !== "lobby") return;
       room.broadcast({ type: "game-lobby", subtype: "ping" });
@@ -1369,10 +1497,10 @@ export function useSkymatch(room, canvasRef, canvasW, canvasH, wrapperRef) {
     startSolo,
     backToLobby,
     mobileKey,
+    mobileJoystick,
     mount,
     unmount,
     resize,
     planeTypes,
-    mobileJoystick,
   };
 }

@@ -259,7 +259,8 @@ export function useGameRenderer(canvasRef, canvasW, canvasH) {
   };
 
   const _drawExplosion = (e) => {
-    const alpha = e.life / (e.big ? 45 : 22);
+    const maxLife = e.big ? 45 : 22;
+    const alpha = Math.max(0, Math.min(1, e.life / maxLife));
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.shadowBlur = 24;
