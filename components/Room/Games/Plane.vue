@@ -442,6 +442,7 @@ const {
 const isPortrait = ref(false);
 const checkOrientation = () => {
   isPortrait.value = window.innerHeight > window.innerWidth;
+  isPortrait.value ? toggle(wrapperRef.value) : "";
 };
 
 const JOYSTICK_RADIUS = 56; // max knob travel in px
