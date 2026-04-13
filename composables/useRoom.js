@@ -1,4 +1,4 @@
-import { ref, computed, onUnmounted } from "vue";
+import { ref, onUnmounted } from "vue";
 
 export const useRoom = () => {
   const roomId = ref("");
@@ -8,7 +8,6 @@ export const useRoom = () => {
   const members = ref([]); // [{ peerId, name, joined }]
   const messages = ref([]); // chat + file messages
 
-  // --- Reactive Media State ---
   const isCameraActive = ref(true);
   const isMicActive = ref(true);
   const localStream = ref(null);
@@ -17,8 +16,9 @@ export const useRoom = () => {
   const dataConns = new Map(); // peerId -> DataConnection
   const mediaConns = new Map(); // peerId -> { call, stream }
   const messageHandlers = new Set();
+  const leaveTimers = new Map(); // peerId -> timer (grace period before evicting on disconnect)
 
-  // ── PeerJS loader ─────────────────────────────────────────────────────────
+  // ── PeerJS loader ────────────────────────────────────────────────────────
   const loadPeerJS = () =>
     new Promise((resolve, reject) => {
       if (typeof window === "undefined") return reject();
@@ -30,7 +30,7 @@ export const useRoom = () => {
       document.head.appendChild(s);
     });
 
-  // ── ICE servers ───────────────────────────────────────────────────────────
+  // ── ICE servers ──────────────────────────────────────────────────────────
   const iceServers = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
@@ -46,7 +46,7 @@ export const useRoom = () => {
     },
   ];
 
-  // ── Init peer ─────────────────────────────────────────────────────────────
+  // ── Init peer ────────────────────────────────────────────────────────────
   const init = async (name, desiredId = null) => {
     if (!import.meta.client) return;
     myName.value = name || "Guest";
@@ -84,16 +84,8 @@ export const useRoom = () => {
         });
       });
 
-      // Incoming data connections
-      peer.on("connection", (conn) => {
-        _setupDataConn(conn);
-      });
-
-      // Incoming media calls — route through messageHandlers so all
-      // components (VideoGrid, ScreenShare) can handle them in one place.
-      peer.on("call", (call) => {
-        _handleIncomingCall(call);
-      });
+      peer.on("connection", (conn) => _setupDataConn(conn));
+      peer.on("call", (call) => _handleIncomingCall(call));
     } catch (err) {
       status.value = "error";
       console.error("[Room] init failed:", err);
@@ -104,7 +96,6 @@ export const useRoom = () => {
   const _setupDataConn = (conn) => {
     conn.on("open", () => {
       dataConns.set(conn.peer, conn);
-      // Send our identity
       conn.send({
         type: "join",
         peerId: myPeerId.value,
@@ -113,58 +104,120 @@ export const useRoom = () => {
       });
     });
 
-    conn.on("data", (data) => {
-      _handleData(data, conn.peer);
-    });
+    conn.on("data", (data) => _handleData(data, conn.peer));
 
     conn.on("close", () => {
-      _removeMember(conn.peer);
       dataConns.delete(conn.peer);
-      mediaConns.delete(conn.peer);
+      // Don't evict immediately — the peer may be refreshing and will rejoin
+      // with a new peer ID within a few seconds. If they do, _addMember will
+      // cancel this timer and clean up the old entry by name instead.
+      const timer = setTimeout(() => {
+        _removeMember(conn.peer);
+        mediaConns.delete(conn.peer);
+        leaveTimers.delete(conn.peer);
+      }, 6000);
+      leaveTimers.set(conn.peer, { timer, peerId: conn.peer });
     });
 
     conn.on("error", (err) => {
       console.warn("[Room] data conn error:", err);
-      _removeMember(conn.peer);
       dataConns.delete(conn.peer);
+      const timer = setTimeout(() => {
+        _removeMember(conn.peer);
+        leaveTimers.delete(conn.peer);
+      }, 6000);
+      leaveTimers.set(conn.peer, { timer, peerId: conn.peer });
     });
   };
 
   // ── Handle incoming data ──────────────────────────────────────────────────
   const _handleData = (data, fromPeerId) => {
     if (data.type === "join") {
+      // If someone with the same name is already in the member list under a
+      // different peer ID, they refreshed — evict the stale entry and close
+      // any media connection that was open to that old ID.
+      const stale = members.value.find(
+        (m) => m.name === data.name && m.peerId !== data.peerId,
+      );
+      if (stale) {
+        _cancelLeaveTimer(stale.peerId);
+        _removeMember(stale.peerId);
+        const staleMedia = mediaConns.get(stale.peerId);
+        if (staleMedia) {
+          try {
+            staleMedia.call?.close();
+          } catch {}
+          mediaConns.delete(stale.peerId);
+        }
+        dataConns.delete(stale.peerId);
+        // Tell our VideoGrid etc. that the old stream is gone
+        for (const handler of messageHandlers) {
+          handler({ type: "call-ended", peerId: stale.peerId }, stale.peerId);
+        }
+      }
+
       _addMember({ peerId: data.peerId, name: data.name });
-      // Send back our info
+
+      // Send our info back + current member list so the joiner
+      // knows everyone in the room.
       const conn = dataConns.get(fromPeerId);
       if (conn?.open) {
         conn.send({
           type: "join-ack",
           peerId: myPeerId.value,
           name: myName.value,
+          // Full member list so the joiner can discover and data-connect everyone
           members: members.value,
         });
       }
+
+      // Notify ALL existing peers about the new joiner so they can open a
+      // data channel to them. Without this, B never learns C joined at all.
+      broadcast(
+        { type: "peer-joined", peerId: data.peerId, name: data.name },
+        [data.peerId], // don't echo back to the joiner
+      );
     } else if (data.type === "join-ack") {
       _addMember({ peerId: data.peerId, name: data.name });
-      // Also learn about other members
+
+      // Learn about every other member already in the room and open a
+      // data channel to each — data-only, no auto media call.
       if (Array.isArray(data.members)) {
         data.members.forEach((m) => {
-          if (m.peerId !== myPeerId.value) _addMember(m);
+          if (m.peerId !== myPeerId.value) {
+            _addMember(m);
+            if (!dataConns.has(m.peerId)) connectTo(m.peerId);
+          }
         });
       }
+    } else if (data.type === "peer-joined") {
+      // A peer we didn't know about just joined; open a data channel to them.
+      const { peerId, name } = data;
+      if (peerId === myPeerId.value) return;
+      _addMember({ peerId, name });
+      if (!dataConns.has(peerId)) connectTo(peerId);
     } else if (data.type === "leave") {
       _removeMember(data.peerId);
     } else if (data.type === "chat" || data.type === "file") {
       messages.value = [...messages.value, { ...data, fromMe: false }];
     }
 
-    // Notify all handlers
     for (const handler of messageHandlers) {
       handler(data, fromPeerId);
     }
   };
 
+  const _cancelLeaveTimer = (peerId) => {
+    const entry = leaveTimers.get(peerId);
+    if (entry) {
+      clearTimeout(entry.timer);
+      leaveTimers.delete(peerId);
+    }
+  };
+
   const _addMember = (member) => {
+    // Cancel any pending eviction for this peer (e.g. they reconnected quickly)
+    _cancelLeaveTimer(member.peerId);
     if (
       !members.value.find((m) => m.peerId === member.peerId) &&
       member.peerId !== myPeerId.value
@@ -177,7 +230,7 @@ export const useRoom = () => {
     members.value = members.value.filter((m) => m.peerId !== peerId);
   };
 
-  // ── Connect to another peer (join mesh) ───────────────────────────────────
+  // ── Connect to another peer (data channel) ───────────────────────────────
   const connectTo = (remotePeerId) => {
     if (!peer || peer.destroyed) return;
     if (dataConns.has(remotePeerId)) return;
@@ -221,7 +274,6 @@ export const useRoom = () => {
     const isImage = file.type.startsWith("image/");
     const isVideo = file.type.startsWith("video/");
 
-    // Read as base64 for images/small files (< 5MB)
     if (file.size > 5 * 1024 * 1024) {
       const msg = {
         type: "file",
@@ -275,8 +327,6 @@ export const useRoom = () => {
 
   const getLocalStream = async (video = true) => {
     if (localStream.value) {
-      // Re-sync every time we hand the stream to a new caller (e.g. callPeer)
-      // so that a mute toggled before the call still takes effect.
       _syncTrackStates(localStream.value);
       return localStream.value;
     }
@@ -286,7 +336,6 @@ export const useRoom = () => {
         audio: { echoCancellation: true, noiseSuppression: true },
       });
       localStream.value = stream;
-      // Force-apply whatever flags were set before the stream arrived
       _syncTrackStates(stream);
       return stream;
     } catch (e) {
@@ -305,10 +354,6 @@ export const useRoom = () => {
   };
 
   const toggleMic = () => {
-    // Always derive the new state by flipping the flag, then push it to the
-    // track. Never read track.enabled to decide the next state — the flag IS
-    // the source of truth. This avoids the double-click bug where flag and
-    // track.enabled were one step out of sync.
     isMicActive.value = !isMicActive.value;
     if (localStream.value) {
       localStream.value
@@ -329,10 +374,14 @@ export const useRoom = () => {
   const callPeer = async (remotePeerId, withVideo = true) => {
     const stream = await getLocalStream(withVideo);
     if (!stream || !peer) return null;
+
     const call = peer.call(remotePeerId, stream, {
       metadata: { name: myName.value, withVideo },
     });
+
+    // Track the call so components can check state via mediaConns
     mediaConns.set(remotePeerId, { call, stream: null });
+
     call.on("stream", (remoteStream) => {
       const existing = mediaConns.get(remotePeerId) || {};
       mediaConns.set(remotePeerId, { ...existing, call, stream: remoteStream });
@@ -343,12 +392,19 @@ export const useRoom = () => {
         );
       }
     });
+
     call.on("close", () => {
       mediaConns.delete(remotePeerId);
       for (const handler of messageHandlers) {
         handler({ type: "call-ended", peerId: remotePeerId }, remotePeerId);
       }
     });
+
+    call.on("error", (err) => {
+      console.warn("[Room] media call error:", err);
+      mediaConns.delete(remotePeerId);
+    });
+
     return call;
   };
 
@@ -372,6 +428,7 @@ export const useRoom = () => {
     if (!stream) return;
     call.answer(stream);
     mediaConns.set(call.peer, { call, stream: null });
+
     call.on("stream", (remoteStream) => {
       const existing = mediaConns.get(call.peer) || {};
       mediaConns.set(call.peer, { ...existing, stream: remoteStream });
@@ -382,11 +439,17 @@ export const useRoom = () => {
         );
       }
     });
+
     call.on("close", () => {
       mediaConns.delete(call.peer);
       for (const handler of messageHandlers) {
         handler({ type: "call-ended", peerId: call.peer }, call.peer);
       }
+    });
+
+    call.on("error", (err) => {
+      console.warn("[Room] answer call error:", err);
+      mediaConns.delete(call.peer);
     });
   };
 
@@ -404,7 +467,6 @@ export const useRoom = () => {
           video: {
             cursor: "always",
             displaySurface: "monitor",
-            // Hint for browsers/PWA that support it
             selfBrowserSurface: "exclude",
           },
           audio: {
@@ -416,11 +478,9 @@ export const useRoom = () => {
         return stream;
       } catch (e) {
         if (e.name === "NotAllowedError") return null;
-        // Fall through to mobile camera fallback
       }
     }
 
-    // Mobile PWA fallback: use rear camera as "share"
     try {
       return await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
@@ -449,6 +509,8 @@ export const useRoom = () => {
         call?.close();
       } catch {}
     }
+    for (const [, entry] of leaveTimers) clearTimeout(entry.timer);
+    leaveTimers.clear();
     mediaConns.clear();
     dataConns.clear();
     if (peer && !peer.destroyed) peer.destroy();

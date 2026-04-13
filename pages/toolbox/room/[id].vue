@@ -30,7 +30,6 @@
       </div>
 
       <div class="topbar-center">
-        <!-- Tab navigation — desktop -->
         <div class="tab-nav desktop-only">
           <button
             v-for="tab in tabs"
@@ -49,7 +48,15 @@
       </div>
 
       <div class="topbar-right">
-        <!-- Share room -->
+        <!-- Back to lobby button when a game is active -->
+        <button
+          v-if="activeTab === 'games' && selectedGame"
+          class="icon-btn"
+          :title="$t('backToLobby')"
+          @click="selectedGame = null"
+        >
+          <Icon name="mdi:gamepad-variant-outline" size="18" />
+        </button>
         <button
           class="icon-btn"
           :title="$t('shareRoom')"
@@ -82,7 +89,6 @@
 
     <!-- ── MAIN CONTENT ──────────────────────────────────────────── -->
     <main class="room-main">
-      <!-- VIDEO GRID -->
       <div v-show="activeTab === 'video'" class="tab-panel">
         <RoomVideoGrid
           :room="room"
@@ -92,28 +98,46 @@
         />
       </div>
 
-      <!-- WHITEBOARD -->
       <div v-show="activeTab === 'board'" class="tab-panel">
         <RoomWhiteboard :room="room" />
       </div>
 
-      <!-- CHAT + FILES -->
       <div v-show="activeTab === 'chat'" class="tab-panel" @click="clearUnread">
         <RoomChat :room="room" />
       </div>
 
-      <!-- SCREEN SHARE -->
       <div v-show="activeTab === 'screen'" class="tab-panel">
         <RoomScreenShare :room="room" />
       </div>
 
-      <!-- GAMES -->
+      <!-- GAMES: lobby or active game -->
       <div
         v-show="activeTab === 'games'"
         class="tab-panel"
         style="height: 100%"
       >
-        <RoomGamesPlane :room="room" />
+        <!-- Lobby — shown when no game is selected -->
+        <RoomGamesLobby
+          v-if="!selectedGame"
+          :room="room"
+          @select="onGameSelect"
+        />
+
+        <!-- Active game — keyed so it fully remounts on game change -->
+        <template v-else>
+          <RoomGamesPong
+            v-if="selectedGame === 'pong'"
+            :key="'pong'"
+            :room="room"
+            @exit="selectedGame = null"
+          />
+          <RoomGamesPlane
+            v-else-if="selectedGame === 'skyaces'"
+            :key="'skyaces'"
+            :room="room"
+            @exit="selectedGame = null"
+          />
+        </template>
       </div>
     </main>
 
@@ -167,6 +191,9 @@ const sidebarOpen = ref(false);
 const showShare = ref(false);
 const unreadCount = ref(0);
 
+// Which game is running — null means show the lobby
+const selectedGame = ref(null);
+
 const tabs = [
   { key: "video", labelKey: "videoCall", icon: "mdi:video-outline" },
   { key: "board", labelKey: "whiteboard", icon: "mdi:draw" },
@@ -175,14 +202,15 @@ const tabs = [
   { key: "games", labelKey: "games", icon: "mdi:gamepad-variant-outline" },
 ];
 
-// FIX: Removed the previous activeTab watcher that disabled/enabled camera
-// tracks whenever the tab changed. That logic was fighting with the user's
-// own camera toggle (isCameraActive) and caused the camera to stay off after
-// switching back to the video tab. The camera state is now fully owned by
-// useRoom.toggleCamera() and RoomVideoGrid — this page should not touch tracks.
-watch(activeTab, (newTab) => {
+// When leaving the games tab, reset back to lobby so it's fresh next visit
+watch(activeTab, (newTab, oldTab) => {
   if (newTab === "chat") unreadCount.value = 0;
+  if (oldTab === "games") selectedGame.value = null;
 });
+
+const onGameSelect = (game) => {
+  selectedGame.value = game;
+};
 
 const allMembers = computed(() => [
   { peerId: room.myPeerId.value, name: room.myName.value, isMe: true },
@@ -198,18 +226,16 @@ const clearUnread = () => {
   if (activeTab.value === "chat") unreadCount.value = 0;
 };
 
-// FIX: Only count messages that weren't sent by me and aren't visible
 watch(
   () => room.messages.value.length,
   (newLen, oldLen) => {
-    if (activeTab.value === "chat") return; // already visible
+    if (activeTab.value === "chat") return;
     const newMessages = room.messages.value.slice(oldLen);
     const hasIncoming = newMessages.some((m) => !m.fromMe);
     if (hasIncoming) unreadCount.value++;
   },
 );
 
-// ── Room join / host logic ─────────────────────────────────────────────────
 onMounted(async () => {
   if (!nameParam.value || nameParam.value === "Guest") {
     const saved = localStorage.getItem("room-name");
@@ -226,7 +252,6 @@ onMounted(async () => {
     room.roomId.value = roomId.value;
     room.connectTo(roomId.value);
 
-    // Connect to any additional peers we learn about via join-ack
     watch(room.members, (members) => {
       members.forEach((m) => {
         if (!room.getDataConn(m.peerId)) {
@@ -263,7 +288,6 @@ onUnmounted(() => {
   }
 }
 
-/* ── Top bar ─────────────────────────────────────────────── */
 .room-topbar {
   display: flex;
   align-items: center;
@@ -384,7 +408,6 @@ onUnmounted(() => {
   }
 }
 
-/* ── Tab nav (desktop) ───────────────────────────────────── */
 .tab-nav {
   display: flex;
   gap: 2px;
@@ -429,7 +452,6 @@ onUnmounted(() => {
   text-align: center;
 }
 
-/* ── Mobile tabs ─────────────────────────────────────────── */
 .mobile-tabs {
   display: flex;
   border-bottom: 1.5px solid var(--border-color);
@@ -485,7 +507,6 @@ onUnmounted(() => {
   font-weight: 800;
 }
 
-/* ── Icon btn ────────────────────────────────────────────── */
 .icon-btn {
   width: 36px;
   height: 36px;
@@ -506,7 +527,6 @@ onUnmounted(() => {
   }
 }
 
-/* ── Main ────────────────────────────────────────────────── */
 .room-main {
   flex: 1;
   overflow: hidden;
@@ -527,7 +547,6 @@ onUnmounted(() => {
   }
 }
 
-/* ── Share modal ─────────────────────────────────────────── */
 .share-modal-content {
   display: flex;
   flex-direction: column;
@@ -560,7 +579,6 @@ onUnmounted(() => {
   letter-spacing: 0.15em;
 }
 
-/* ── Connecting overlay ──────────────────────────────────── */
 .connecting-overlay {
   position: fixed;
   inset: 0;
@@ -586,7 +604,6 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
-/* ── Utils ───────────────────────────────────────────────── */
 .desktop-only {
   @media (max-width: 640px) {
     display: none !important;

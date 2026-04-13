@@ -485,7 +485,7 @@ watch(
   justify-content: center;
   gap: 12px;
   padding: 15px;
-  background: #0a0f1e;
+  background: var(--bg-page);
   overflow-y: auto;
 }
 

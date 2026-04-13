@@ -562,5 +562,106 @@
       "title": "Enter them in GramKit",
       "desc": "Paste your api_id and api_hash into the connect form. Your credentials stay in your browser — they are never sent to any server other than Telegram's own."
     }
+  },
+  "common": {
+    "back": "BACK",
+    "exit": "EXIT",
+    "full": "FULL",
+    "victory": "VICTORY!",
+    "defeated": "DEFEATED",
+    "exitFullscreen": "EXIT FULLSCREEN",
+    "fullscreen": "FULLSCREEN + LANDSCAPE",
+    "rotateLandscape": "Rotate for best experience"
+  },
+  "gameroom": {
+    "title1": "GAME",
+    "title2": "ROOM",
+    "subtitle": "PICK YOUR BATTLEFIELD",
+    "footer": "All games run peer-to-peer — no servers",
+    "pong": {
+      "tag": "2 PLAYERS · P2P",
+      "title": "PONG",
+      "desc": "Classic paddle battle. First to 3 goals wins. Pure reflex, zero mercy.",
+      "meta": {
+        "paddles": "Paddles",
+        "realtime": "Real-time",
+        "firstTo": "First to 3"
+      },
+      "cta": "PLAY NOW →"
+    },
+    "skyaces": {
+      "tag": "MULTIPLAYER · WW1",
+      "title": "SKYACES",
+      "desc": "WW1 aerial dogfight. Choose your aircraft, dominate the skies.",
+      "meta": {
+        "aircraft": "4 Aircraft",
+        "ai": "AI Pilots",
+        "abilities": "Abilities"
+      },
+      "cta": "FLY NOW →"
+    }
+  },
+  "skyaces": {
+    "title1": "SKY",
+    "title2": "ACES",
+    "subtitle": "WW1 AERIAL COMBAT · MULTIPLAYER",
+    "lobby": {
+      "chooseAircraft": "CHOOSE YOUR AIRCRAFT",
+      "hangar": "HANGAR ({count})",
+      "statSpd": "SPD",
+      "statHp": "HP",
+      "ready": "READY",
+      "readyActive": "READY!",
+      "readyUp": "READY UP",
+      "waiting": "WAITING",
+      "picking": "PICKING",
+      "flySolo": "FLY SOLO",
+      "ctrlOr": "or",
+      "ctrlFly": "fly",
+      "ctrlFire": "fire",
+      "ctrlAbility": "ability",
+      "hint": "All pilots ready → countdown begins"
+    },
+    "hud": {
+      "hp": "HP",
+      "ammo": "AMM",
+      "ready": "RDY!",
+      "kills": "KILLS",
+      "wave": "WAVE",
+      "ctrlHint": "WASD/Arrows · SPACE fire · E ability"
+    },
+    "mobile": {
+      "steer": "STEER",
+      "fire": "FIRE"
+    },
+    "results": {
+      "claimsSkies": "{name} claims the skies!",
+      "rank": "RANK",
+      "pilot": "PILOT",
+      "kills": "KILLS",
+      "assists": "ASSISTS",
+      "playAgain": "PLAY AGAIN"
+    }
+  },
+  "pong": {
+    "title": "PONG",
+    "subtitle": "CLASSIC · 2 PLAYER · P2P",
+    "lobby": {
+      "vs": "VS",
+      "ready": "READY",
+      "readyActive": "READY!",
+      "readyUp": "READY UP",
+      "notReady": "NOT READY",
+      "waitingDots": "WAITING...",
+      "startingIn": "STARTING IN {n}...",
+      "ctrlOr": "or",
+      "ctrlMove": "move paddle",
+      "hint": "Both players ready → countdown begins"
+    },
+    "results": {
+      "winsMatch": "{name} wins the match!",
+      "rematch": "REMATCH",
+      "backToGames": "GAMES"
+    }
   }
 }

@@ -400,7 +400,7 @@ onUnmounted(() => {
   flex: 1;
   overflow: hidden;
   position: relative;
-  background: #0a0f1e;
+  background: var(--bg-page);
 }
 
 .ss-remote-view,
